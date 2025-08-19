@@ -1,0 +1,81 @@
+[P1] Walls + one-per-owner-per-wall (no auth yet)
+
+Add walls table and wall_id to signatures
+
+Load wall by slug shard-001
+
+Filter queries by wall_id
+
+Unique index on (owner, wall_id)
+
+UI shows wall slug + dimensions
+
+[P1] “Report” button + reports table
+
+reports table + simple insert on click
+
+Toast confirmation, no reload needed
+
+(Admin page later)
+
+[P1] Fix: show helpful error if insert fails (unique constraint / policies)
+
+Parse Supabase error and show friendly message
+
+Keep user’s signature in memory so they can try a different size/rotation
+
+[P2] Supabase Auth (email magic link)
+
+Sign‑in modal, sign‑out button
+
+Get user.id; include user_id on insert
+
+Show erase/edit only if user_id === user.id
+
+Update RLS policies
+
+[P2] Enforce one-per-user-per-wall
+
+Unique index (user_id, wall_id) (partial: where user_id is not null)
+
+Friendly error if user already placed
+
+[P2] Edit my signature (size/rotation) without delete
+
+Sliders enabled when you own a signature
+
+Implement spiralNudge + autoShrink
+
+Call update not delete+insert
+
+[P3] Storage + CDN
+
+Save PNG to Supabase Storage (bucket signatures/)
+
+Store storage_path instead of base64
+
+Serve via CDN URL
+
+[P3] Moderation v1
+
+Server function to reject profane names
+
+Edge Function to check NSFW on image; mark hidden=true
+
+Report list view for admin
+
+[P3] Performance
+
+Spatial hash utility
+
+Virtualized rendering (viewport only)
+
+Worker for placement/collision math
+
+[P3] UX polish
+
+Mini‑map navigator
+
+Persistent user color preference
+
+Keyboard/ARIA pass
