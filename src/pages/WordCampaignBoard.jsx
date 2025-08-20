@@ -1450,48 +1450,52 @@ export default function WordCampaignBoard() {
         }}
       />
 
-      <style jsx>{`  
-        [data-flash="1"] {  
-          animation: flash 1.5s ease-in-out;  
-        }  
-          
-        @keyframes flash {  
-          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }  
-          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }  
-          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }  
-        }  
-          
-        /* Custom range slider */  
-        input[type="range"] {  
-          -webkit-appearance: none;  
-          height: 6px;  
-          background: #e5e7eb;  
-          border-radius: 3px;  
-          outline: none;  
-        }  
-          
-        input[type="range"]::-webkit-slider-thumb {  
-          -webkit-appearance: none;  
-          appearance: none;  
-          width: 18px;  
-          height: 18px;  
-          border-radius: 50%;  
-          background: #4f46e5;  
-          cursor: pointer;  
-          border: 2px solid white;  
-          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);  
-        }  
-          
-        input[type="range"]::-moz-range-thumb {  
-          width: 18px;  
-          height: 18px;  
-          border-radius: 50%;  
-          background: #4f46e5;  
-          cursor: pointer;  
-          border: 2px solid white;  
-          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);  
-        }  
-      `}</style>
+     // ... (all the previous code remains the same until the style section at the end)
+
+// Remove the entire style jsx section and replace it with this:
+
+<style>{`
+  [data-flash="1"] {  
+    animation: flash 1.5s ease-in-out;  
+  }  
+    
+  @keyframes flash {  
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }  
+    50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }  
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }  
+  }  
+    
+  /* Custom range slider */  
+  .word-campaign-board input[type="range"] {  
+    -webkit-appearance: none;  
+    height: 6px;  
+    background: #e5e7eb;  
+    border-radius: 3px;  
+    outline: none;  
+  }  
+    
+  .word-campaign-board input[type="range"]::-webkit-slider-thumb {  
+    -webkit-appearance: none;  
+    appearance: none;  
+    width: 18px;  
+    height: 18px;  
+    border-radius: 50%;  
+    background: #4f46e5;  
+    cursor: pointer;  
+    border: 2px solid white;  
+    box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);  
+  }  
+    
+  .word-campaign-board input[type="range"]::-moz-range-thumb {  
+    width: 18px;  
+    height: 18px;  
+    border-radius: 50%;  
+    background: #4f46e5;  
+    cursor: pointer;  
+    border: 2px solid white;  
+    box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);  
+  }  
+`}</style>
     </div>
   );
 }
