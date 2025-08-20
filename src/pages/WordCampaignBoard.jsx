@@ -1,9 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import SignaturePad from "../components/SignaturePad";
-import TextMaskGenerator from "../components/TextMaskGenerator";
-import CommunityGuidelinesModal from "../components/CommunityGuidelinesModal";
-import PlacementEngine from "../utils/PlacementEngine";
 
 // Supabase client
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -11,38 +7,361 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Constants
-const WALL_WIDTH = 3000;
-const WALL_HEIGHT = 1800;
-const MIN_SIGNATURE_WIDTH = 80;
-const MIN_SIGNATURE_HEIGHT = 40;
+const WALL_WIDTH = 4000;
+const WALL_HEIGHT = 2000;
+const MIN_SIGNATURE_WIDTH = 60;
+const MIN_SIGNATURE_HEIGHT = 30;
+const MAX_SIGNATURE_WIDTH = 150;
+const MAX_SIGNATURE_HEIGHT = 75;
 
-// Default campaigns
+// Default campaign phrases
 const DEFAULT_CAMPAIGNS = [
   "BLACK LIVES MATTER",
   "LOVE IS LOVE",
   "CLIMATE ACTION NOW",
-  "WOMEN'S RIGHTS ARE HUMAN RIGHTS"
+  "WOMEN'S RIGHTS"
 ];
 
-function WordCampaignBoard() {
+// Enhanced SignaturePad Component
+const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200 }) => {
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasInk, setHasInk] = useState(false);
+  const [lastPoint, setLastPoint] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    
+    ctx.scale(dpr, dpr);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+  }, [width, height, color]);
+
+  const getPosition = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    if (e.touches) {
+      const t = e.touches[0];
+      return { 
+        x: t.clientX - rect.left, 
+        y: t.clientY - rect.top
+      };
+    }
+    return { 
+      x: e.clientX - rect.left, 
+      y: e.clientY - rect.top
+    };
+  };
+
+  const startDrawing = (e) => {
+    e.preventDefault();
+    const pos = getPosition(e);
+    const ctx = canvasRef.current.getContext('2d');
+    
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    setIsDrawing(true);
+    setLastPoint(pos);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const pos = getPosition(e);
+    const ctx = canvasRef.current.getContext('2d');
+    
+    // Calculate distance from last point to determine line width
+    const dist = Math.sqrt(Math.pow(pos.x - lastPoint.x, 2) + Math.pow(pos.y - lastPoint.y, 2));
+    ctx.lineWidth = Math.max(2, Math.min(5, 10 - dist/10));
+    
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    setHasInk(true);
+    setLastPoint(pos);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    setHasInk(false);
+  };
+
+  const trimCanvas = (canvas) => {
+    const ctx = canvas.getContext('2d');
+    const { width, height } = canvas;
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+    
+    let minX = width, minY = height, maxX = 0, maxY = 0, hasInk = false;
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const alpha = data[idx + 3];
+        
+        if (alpha > 0) {
+          hasInk = true;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    
+    if (!hasInk) return null;
+    
+    const trimW = Math.max(1, maxX - minX + 10);
+    const trimH = Math.max(1, maxY - minY + 10);
+    const out = document.createElement('canvas');
+    
+    out.width = trimW;
+    out.height = trimH;
+    
+    const octx = out.getContext('2d');
+    octx.drawImage(canvas, minX-5, minY-5, trimW, trimH, 0, 0, trimW, trimH);
+    
+    return out.toDataURL('image/png');
+  };
+
+  const exportSignature = () => {
+    const trimmed = trimCanvas(canvasRef.current);
+    if (!trimmed) return;
+    onExport(trimmed);
+  };
+
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-zinc-600">Draw your signature below</div>
+        <div className="flex gap-2 text-sm">
+          <button onClick={clearCanvas} className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200">
+            Clear
+          </button>
+          <button 
+            onClick={exportSignature} 
+            disabled={!hasInk}
+            className={`px-3 py-1.5 rounded-xl ${hasInk ? 'bg-black text-white hover:opacity-90' : 'bg-zinc-300 text-zinc-500 cursor-not-allowed'}`}
+          >
+            Use This Signature
+          </button>
+        </div>
+      </div>
+      
+      <div className="rounded-2xl border border-zinc-200 bg-white shadow-inner overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          className="w-full h-full touch-none block"
+          style={{ height: `${height}px` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// Text Mask Generator Component
+const TextMaskGenerator = ({ text, width, height, className = "" }) => {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !text) return;
+    
+    const ctx = canvas.getContext("2d");
+    canvas.width = width;
+    canvas.height = height;
+    
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    // Auto-adjust font size to fit
+    let fontSize = 300;
+    const fontFamily = "Arial Black, Arial, sans-serif";
+    
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    let textWidth = ctx.measureText(text).width;
+    
+    while (textWidth > width * 0.9 && fontSize > 50) {
+      fontSize -= 10;
+      ctx.font = `bold ${fontSize}px ${fontFamily}`;
+      textWidth = ctx.measureText(text).width;
+    }
+    
+    ctx.fillText(text, width / 2, height / 2);
+  }, [text, width, height]);
+
+  return (
+    <canvas 
+      ref={canvasRef} 
+      className={className}
+      style={{ 
+        width: `${width}px`, 
+        height: `${height}px`,
+        display: 'block'
+      }}
+    />
+  );
+};
+
+// Community Guidelines Modal Component
+const CommunityGuidelinesModal = ({ isOpen, onClose, onAccept }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6">
+        <h2 className="text-xl font-bold mb-4">Community Guidelines</h2>
+        
+        <div className="text-sm mb-6">
+          <p className="mb-3">By adding your signature, you agree to our community guidelines:</p>
+          
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Be respectful of others</li>
+            <li>No hate speech or offensive content</li>
+            <li>Your signature should be your own creation</li>
+            <li>Respect copyright and intellectual property</li>
+          </ul>
+          
+          <p className="mt-4 text-xs text-zinc-500">
+            Violations may result in removal of your signature.
+          </p>
+        </div>
+        
+        <div className="flex justify-end gap-3">
+          <button 
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-zinc-200 hover:bg-zinc-300"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={onAccept}
+            className="px-4 py-2 rounded-lg bg-black text-white hover:opacity-90"
+          >
+            I Accept
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Placement Engine
+const PlacementEngine = {
+  // Calculate rotated bounds
+  rotatedBounds: (w, h, rotRad) => {
+    const cos = Math.cos(rotRad);
+    const sin = Math.sin(rotRad);
+    const rw = Math.abs(w * cos) + Math.abs(h * sin);
+    const rh = Math.abs(w * sin) + Math.abs(h * cos);
+    return { rw, rh };
+  },
+  
+  // Check if two rectangles overlap
+  overlaps: (a, b) => {
+    return a.x < b.x + b.w &&
+           a.x + a.w > b.x &&
+           a.y < b.y + b.h &&
+           a.y + a.h > b.y;
+  },
+  
+  // Find placement inside text mask
+  findPlacementInMask: ({ maskCanvas, imgW, imgH, rotRad, existing, maxTries = 1000 }) => {
+    const { rw, rh } = PlacementEngine.rotatedBounds(imgW, imgH, rotRad);
+    const w = Math.ceil(rw);
+    const h = Math.ceil(rh);
+    
+    const ctx = maskCanvas.getContext("2d");
+    const mask = ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+
+    // Check if a rectangle is inside the text mask
+    const rectIsInsideMask = (x, y) => {
+      // Sample multiple points inside the rectangle
+      const samples = 9;
+      let insideCount = 0;
+      
+      for (let i = 0; i < samples; i++) {
+        const px = Math.floor(x + (i % 3) * (w / 2));
+        const py = Math.floor(y + Math.floor(i / 3) * (h / 2));
+        
+        if (px >= 0 && px < maskCanvas.width && py >= 0 && py < maskCanvas.height) {
+          const idx = (py * maskCanvas.width + px) * 4 + 3; // alpha channel
+          if (mask[idx] > 200) insideCount++;
+        }
+      }
+      
+      return insideCount >= 5; // At least 5 of 9 points should be inside
+    };
+
+    // Try to find a valid position
+    for (let i = 0; i < maxTries; i++) {
+      const x = Math.floor(Math.random() * Math.max(1, maskCanvas.width - w));
+      const y = Math.floor(Math.random() * Math.max(1, maskCanvas.height - h));
+
+      if (!rectIsInsideMask(x, y)) continue;
+
+      const bb = { x, y, w, h };
+      const collides = existing.some(e => {
+        const eBounds = PlacementEngine.rotatedBounds(e.w, e.h, e.rot);
+        return PlacementEngine.overlaps(bb, { 
+          x: e.x, 
+          y: e.y, 
+          w: eBounds.rw, 
+          h: eBounds.rh 
+        });
+      });
+      
+      if (!collides) return { x, y };
+    }
+    
+    return null; // No valid position found
+  }
+};
+
+// Main Word Campaign Board Component
+export default function WordCampaignBoard() {
   // State management
   const [activeCampaign, setActiveCampaign] = useState(DEFAULT_CAMPAIGNS[0]);
   const [signatures, setSignatures] = useState([]);
   const [userSignature, setUserSignature] = useState(null);
   const [penColor, setPenColor] = useState("#111827");
-  const [signatureSize, setSignatureSize] = useState(1);
+  const [signatureSize, setSignatureSize] = useState(0.8);
   const [rotation, setRotation] = useState(0);
   const [displayName, setDisplayName] = useState("");
-  const [zoom, setZoom] = useState(0.8);
+  const [zoom, setZoom] = useState(0.7);
   const [isLoading, setIsLoading] = useState(true);
   const [userMessage, setUserMessage] = useState("");
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [guidelinesAccepted, setGuidelinesAccepted] = useState(false);
   const [userAction, setUserAction] = useState(null);
+  const [maskCanvas, setMaskCanvas] = useState(null);
 
   // Refs
   const wallScrollRef = useRef(null);
   const wallInnerRef = useRef(null);
+  const maskCanvasRef = useRef(null);
 
   // User session ID
   const userId = useMemo(() => {
@@ -60,6 +379,35 @@ function WordCampaignBoard() {
     [signatures, userId]
   );
 
+  // Generate text mask
+  useEffect(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = WALL_WIDTH;
+    canvas.height = WALL_HEIGHT;
+    
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, WALL_WIDTH, WALL_HEIGHT);
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    // Auto-adjust font size to fit
+    let fontSize = 300;
+    const fontFamily = "Arial Black, Arial, sans-serif";
+    
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    let textWidth = ctx.measureText(activeCampaign).width;
+    
+    while (textWidth > WALL_WIDTH * 0.9 && fontSize > 50) {
+      fontSize -= 10;
+      ctx.font = `bold ${fontSize}px ${fontFamily}`;
+      textWidth = ctx.measureText(activeCampaign).width;
+    }
+    
+    ctx.fillText(activeCampaign, WALL_WIDTH / 2, WALL_HEIGHT / 2);
+    setMaskCanvas(canvas);
+  }, [activeCampaign]);
+
   // Load signatures for active campaign
   useEffect(() => {
     const loadSignatures = async () => {
@@ -73,7 +421,7 @@ function WordCampaignBoard() {
 
         if (error) {
           console.error("Error loading signatures:", error);
-          setUserMessage("Unable to load signatures at this time. Please try again later.");
+          setUserMessage("Unable to load signatures. Please refresh the page.");
         } else {
           const formattedSignatures = data.map(row => ({
             id: row.id,
@@ -167,26 +515,30 @@ function WordCampaignBoard() {
       const img = new Image();
       img.onload = async () => {
         try {
-          // Calculate final dimensions
-          const baseMax = 360;
-          const ratio = Math.min(1, baseMax / img.width) * signatureSize;
-          const w = Math.max(MIN_SIGNATURE_WIDTH, Math.round(img.width * ratio));
-          const h = Math.max(MIN_SIGNATURE_HEIGHT, Math.round(img.height * ratio));
-          const rotDeg = Math.round(rotation);
+          // Calculate dimensions with size scaling
+          const baseSize = Math.min(img.width, img.height);
+          const targetSize = MIN_SIGNATURE_WIDTH + (MAX_SIGNATURE_WIDTH - MIN_SIGNATURE_WIDTH) * signatureSize;
+          const ratio = targetSize / baseSize;
+          
+          const w = Math.max(MIN_SIGNATURE_WIDTH, Math.min(MAX_SIGNATURE_WIDTH, Math.round(img.width * ratio)));
+          const h = Math.max(MIN_SIGNATURE_HEIGHT, Math.min(MAX_SIGNATURE_HEIGHT, Math.round(img.height * ratio)));
+          
+          // Slight random rotation for visual interest (-15 to +15 degrees)
+          const rotDeg = rotation + (Math.random() * 30 - 15);
           const rotRad = (rotDeg * Math.PI) / 180;
 
           // Find placement
-          const placement = await PlacementEngine.findPlacementInMask({
-            text: activeCampaign,
+          const placement = PlacementEngine.findPlacementInMask({
+            maskCanvas,
             imgW: w,
             imgH: h,
             rotRad,
             existing: signatures,
-            maxTries: 800
+            maxTries: 1500
           });
 
           if (!placement) {
-            setUserMessage("The word is getting crowded. Try a smaller size or different rotation.");
+            setUserMessage("This campaign is completely filled! Try another campaign.");
             setUserAction(null);
             return;
           }
@@ -388,8 +740,8 @@ function WordCampaignBoard() {
                   </label>
                   <input 
                     type="range" 
-                    min="60" 
-                    max="120" 
+                    min="50" 
+                    max="100" 
                     value={signatureSize * 100} 
                     onChange={e => setSignatureSize(parseInt(e.target.value) / 100)} 
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
@@ -542,7 +894,7 @@ function WordCampaignBoard() {
               
               {userMessage && (
                 <div className={`mt-4 p-3 rounded-lg text-sm ${
-                  userMessage.includes('error') || userMessage.includes('Failed') 
+                  userMessage.includes('error') || userMessage.includes('Failed') || userMessage.includes('crowded')
                     ? 'bg-red-50 text-red-700 border border-red-200' 
                     : 'bg-green-50 text-green-700 border border-green-200'
                 }`}>
@@ -622,12 +974,14 @@ function WordCampaignBoard() {
                       }}
                     >
                       {/* Text mask preview (faint outline) */}
-                      <TextMaskGenerator 
-                        text={activeCampaign} 
-                        width={WALL_WIDTH}
-                        height={WALL_HEIGHT}
-                        className="absolute inset-0 opacity-10 pointer-events-none"
-                      />
+                      {maskCanvas && (
+                        <img 
+                          src={maskCanvas.toDataURL()} 
+                          alt="campaign text outline" 
+                          className="absolute inset-0 opacity-10 pointer-events-none"
+                          style={{ width: WALL_WIDTH, height: WALL_HEIGHT }}
+                        />
+                      )}
                       
                       {/* Signatures */}
                       {signatures.map((sig) => (
@@ -759,5 +1113,3 @@ function WordCampaignBoard() {
     </div>
   );
 }
-
-export default WordCampaignBoard;
