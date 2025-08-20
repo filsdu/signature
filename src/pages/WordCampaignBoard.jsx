@@ -601,8 +601,9 @@ export default function WordCampaignBoard() {
           const h = Math.max(MIN_SIGNATURE_HEIGHT, Math.min(MAX_SIGNATURE_HEIGHT, Math.round(img.height * ratio)));
           
           // Slight random rotation for visual interest (-10 to +10 degrees)
-          const rotDeg = rotation + (Math.random() * 20 - 10);
-          const rotRad = (rotDeg * Math.PI) / 180;
+const rotDeg = Math.round(rotation + (Math.random() * 20 - 10)); // ← make it an INT
+const rotRad = (rotDeg * Math.PI) / 180;
+
 
           // Find placement
           const placement = PlacementEngine.findPlacementInMask({
