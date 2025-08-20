@@ -380,8 +380,6 @@ export default function WordCampaignBoard() {
     }
   }
 
-  const wallInnerRef = useRef(null);
-
   return (
     <div className="min-h-screen w-full bg-neutral-50 text-neutral-900">
       <div className="max-w-6xl mx-auto p-6">
