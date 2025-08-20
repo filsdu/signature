@@ -1,577 +1,763 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import SignaturePad from "../components/SignaturePad";
+import TextMaskGenerator from "../components/TextMaskGenerator";
+import CommunityGuidelinesModal from "../components/CommunityGuidelinesModal";
+import PlacementEngine from "../utils/PlacementEngine";
 
-/**
- * WORD CAMPAIGN BOARD
- * People draw their signature, and it auto-places inside the pixels of a big traced word
- * (e.g., "BLACK LIVES MATTER") without overlapping other signatures.
- *
- * Storage:
- * - Uses a separate table: public.word_signatures
- *   Run the SQL shown at the bottom if you haven’t yet.
- */
-
-// ---------- Supabase client ----------
+// Supabase client
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ---------- Constants ----------
-const DEFAULT_TEXT = "BLACK LIVES MATTER";
-const WALL_W = 3000;   // large canvas for nicer word shapes
-const WALL_H = 1800;
-const MIN_W = 80;      // min signature size (width)
-const MIN_H = 40;      // min signature size (height)
-const BAD_WORDS = ["fuck","shit","bitch","cunt","dildo","penis","vagina","porn","rape","slut","whore"];
+// Constants
+const WALL_WIDTH = 3000;
+const WALL_HEIGHT = 1800;
+const MIN_SIGNATURE_WIDTH = 80;
+const MIN_SIGNATURE_HEIGHT = 40;
 
-function containsBadWords(text) {
-  if (!text) return false;
-  const t = String(text).toLowerCase();
-  return BAD_WORDS.some(w => t.includes(w));
-}
+// Default campaigns
+const DEFAULT_CAMPAIGNS = [
+  "BLACK LIVES MATTER",
+  "LOVE IS LOVE",
+  "CLIMATE ACTION NOW",
+  "WOMEN'S RIGHTS ARE HUMAN RIGHTS"
+];
 
-function useDevicePixelRatio() {
-  const [dpr, setDpr] = useState(window.devicePixelRatio || 1);
-  useEffect(() => {
-    const handler = () => setDpr(window.devicePixelRatio || 1);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
-  }, []);
-  return dpr;
-}
-
-function rotatedBounds(w, h, rotRad) {
-  const cos = Math.cos(rotRad);
-  const sin = Math.sin(rotRad);
-  const rw = Math.abs(w * cos) + Math.abs(h * sin);
-  const rh = Math.abs(w * sin) + Math.abs(h * cos);
-  return { rw, rh };
-}
-function overlaps(a, b) {
-  return a.x < b.x + b.w &&
-         a.x + a.w > b.x &&
-         a.y < b.y + b.h &&
-         a.y + a.h > b.y;
-}
-
-// Simple pressure-like signature pad (same as your existing)
-function trimCanvas(canvas) {
-  const ctx = canvas.getContext('2d');
-  const { width, height } = canvas;
-  const imgData = ctx.getImageData(0, 0, width, height);
-  const data = imgData.data;
-  let minX = width, minY = height, maxX = 0, maxY = 0, hasInk = false;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const a = data[idx + 3];
-      if (a > 0) {
-        hasInk = true;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (!hasInk) return null;
-  const trimW = Math.max(1, maxX - minX + 2);
-  const trimH = Math.max(1, maxY - minY + 2);
-  const out = document.createElement('canvas');
-  out.width = trimW; out.height = trimH;
-  const octx = out.getContext('2d');
-  octx.putImageData(ctx.getImageData(minX, minY, trimW, trimH), 0, 0);
-  return out.toDataURL('image/png');
-}
-
-function SignaturePad({ width = 500, height = 200, strokeWidth = 2.5, onExport, color = '#111827' }) {
-  const canvasRef = useRef(null);
-  const dpr = useDevicePixelRatio();
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [hasInk, setHasInk] = useState(false);
-  const [pen, setPen] = useState({ pressure: 1 });
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-    ctx.setTransform(1,0,0,1,0,0);
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = color;
-  }, [width, height, dpr, color]);
-
-  const pos = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    if (e.touches) {
-      const t = e.touches[0];
-      return { x: t.clientX - rect.left, y: t.clientY - rect.top, p: (t.force || 0.5) };
-    }
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top, p: 0.5 };
-  };
-  const start = (e) => {
-    e.preventDefault();
-    const p = pos(e);
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-    setIsDrawing(true);
-    setPen({ pressure: p.p });
-  };
-  const move = (e) => {
-    if (!isDrawing) return;
-    const p = pos(e);
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.5, strokeWidth * (0.75 + pen.pressure));
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    setHasInk(true);
-  };
-  const end = () => setIsDrawing(false);
-  const clear = () => {
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.clearRect(0, 0, width, height);
-    setHasInk(false);
-  };
-  const exportPng = () => {
-    const srcCanvas = canvasRef.current;
-    const trimmed = trimCanvas(srcCanvas);
-    if (!trimmed) return;
-    onExport(trimmed);
-  };
-
-  return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-zinc-600">Sign in the box below (mouse/touch)</div>
-        <div className="flex gap-2 text-sm">
-          <button onClick={clear} className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200">Clear</button>
-          <button onClick={exportPng} className="px-3 py-1.5 rounded-xl bg-black text-white hover:opacity-90">Use this</button>
-        </div>
-      </div>
-      <div className="rounded-2xl border border-zinc-200 bg-white shadow-inner">
-        <canvas
-          ref={canvasRef}
-          onMouseDown={start}
-          onMouseMove={move}
-          onMouseUp={end}
-          onMouseLeave={end}
-          onTouchStart={start}
-          onTouchMove={move}
-          onTouchEnd={end}
-          className="w-full h-full touch-none rounded-2xl"
-          style={{ display: 'block' }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// Build a text mask = pixels where signatures are allowed
-function useTextMask(text, opts) {
-  const { fontFamily = "800 220px Inter, system-ui, Arial", padding = 40 } = opts || {};
-  const canvasRef = useRef(document.createElement("canvas"));
-  const [maskReady, setMaskReady] = useState(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    canvas.width = WALL_W;
-    canvas.height = WALL_H;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0,0,WALL_W,WALL_H);
-
-    // Draw centered text
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = fontFamily; // includes weight + size + family
-    // Auto-shrink font until it fits width
-    let size = parseInt(fontFamily.match(/(\d+)px/)?.[1] || "220", 10);
-    const family = fontFamily.replace(/^\d+\s*/, "");
-    while (size > 40) {
-      ctx.font = `800 ${size}px ${family}`;
-      const m = ctx.measureText(text);
-      const textW = m.width + padding * 2;
-      const textH = size + padding * 2;
-      if (textW <= WALL_W && textH <= WALL_H) break;
-      size -= 10;
-    }
-    ctx.font = `800 ${size}px ${family}`;
-    ctx.fillText(text, WALL_W/2, WALL_H/2);
-
-    setMaskReady(true);
-  }, [text, fontFamily, padding]);
-
-  return { canvas: canvasRef.current, maskReady };
-}
-
-// Find a legal spot: inside mask AND not overlapping existing
-function findSpotInMask({ imgW, imgH, rotRad, existing, maskCanvas, tries = 500 }) {
-  const { rw, rh } = rotatedBounds(imgW, imgH, rotRad);
-  const w = Math.ceil(rw);
-  const h = Math.ceil(rh);
-  const ctx = maskCanvas.getContext("2d");
-  const mask = ctx.getImageData(0,0,maskCanvas.width, maskCanvas.height).data;
-
-  function rectIsInsideMask(x, y) {
-    // Sample a grid inside the rect to ensure it's inside the filled text
-    const samples = 24;
-    for (let i = 0; i < samples; i++) {
-      const px = Math.floor(x + (i % 6) * (w / 5));
-      const py = Math.floor(y + Math.floor(i / 6) * (h / 3.5));
-      const idx = (py * maskCanvas.width + px) * 4 + 3; // alpha channel
-      if (mask[idx] < 10) return false; // not inside text
-    }
-    return true;
-  }
-
-  for (let i = 0; i < tries; i++) {
-    const x = Math.floor(Math.random() * Math.max(1, WALL_W - w));
-    const y = Math.floor(Math.random() * Math.max(1, WALL_H - h));
-
-    if (!rectIsInsideMask(x, y)) continue;
-
-    const bb = { x, y, w, h };
-    const collides = existing.some(e => overlaps(bb, { x: e.x, y: e.y, w: rotatedBounds(e.w, e.h, e.rot).rw, h: rotatedBounds(e.w, e.h, e.rot).rh }));
-    if (!collides) return { x, y };
-  }
-  return null;
-}
-
-export default function WordCampaignBoard() {
-  const [campaignText, setCampaignText] = useState(DEFAULT_TEXT);
+function WordCampaignBoard() {
+  // State management
+  const [activeCampaign, setActiveCampaign] = useState(DEFAULT_CAMPAIGNS[0]);
+  const [signatures, setSignatures] = useState([]);
+  const [userSignature, setUserSignature] = useState(null);
   const [penColor, setPenColor] = useState("#111827");
-  const [scale, setScale] = useState(0.9);
-  const [rotation, setRotation] = useState(-8); // we’ll still allow a bit of rotation
+  const [signatureSize, setSignatureSize] = useState(1);
+  const [rotation, setRotation] = useState(0);
   const [displayName, setDisplayName] = useState("");
-  const [sigDataUrl, setSigDataUrl] = useState(null);
-  const [agreed, setAgreed] = useState(false);
-  const [message, setMessage] = useState("");
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.8);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userMessage, setUserMessage] = useState("");
+  const [showGuidelines, setShowGuidelines] = useState(false);
+  const [guidelinesAccepted, setGuidelinesAccepted] = useState(false);
+  const [userAction, setUserAction] = useState(null);
+
+  // Refs
   const wallScrollRef = useRef(null);
   const wallInnerRef = useRef(null);
 
-  const [myId, setMyId] = useState(null);
-  const [placed, setPlaced] = useState([]);
-
-  useEffect(() => {
-    setMyId(crypto.getRandomValues(new Uint32Array(1))[0].toString(16));
+  // User session ID
+  const userId = useMemo(() => {
+    let id = sessionStorage.getItem('signatureShardsUserId');
+    if (!id) {
+      id = crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
+      sessionStorage.setItem('signatureShardsUserId', id);
+    }
+    return id;
   }, []);
 
-  // Build / rebuild text mask when campaign text changes
-  const { canvas: maskCanvas, maskReady } = useTextMask(campaignText, { fontFamily: "800 220px Inter, system-ui, Arial", padding: 40 });
+  // Check if user has already placed a signature
+  const userHasSigned = useMemo(() => 
+    signatures.some(sig => sig.owner === userId), 
+    [signatures, userId]
+  );
 
-  // Load + realtime (separate table: word_signatures)
+  // Load signatures for active campaign
   useEffect(() => {
-    let channel;
-    (async () => {
-      const { data, error } = await supabase
+    const loadSignatures = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("word_signatures")
+          .select("*")
+          .eq("campaign", activeCampaign)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error("Error loading signatures:", error);
+          setUserMessage("Unable to load signatures at this time. Please try again later.");
+        } else {
+          const formattedSignatures = data.map(row => ({
+            id: row.id,
+            url: row.url,
+            x: row.x,
+            y: row.y,
+            w: row.w,
+            h: row.h,
+            rot: (row.rot_deg || 0) * Math.PI / 180,
+            owner: row.owner,
+            name: row.name || '',
+            showName: false
+          }));
+          setSignatures(formattedSignatures);
+        }
+      } catch (err) {
+        console.error("Unexpected error:", err);
+        setUserMessage("An unexpected error occurred. Please refresh the page.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSignatures();
+
+    // Set up realtime subscription
+    const channel = supabase
+      .channel(`word_signatures:${activeCampaign}`)
+      .on("postgres_changes", 
+        { 
+          event: "*", 
+          schema: "public", 
+          table: "word_signatures",
+          filter: `campaign=eq.${activeCampaign}`
+        }, 
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newSig = {
+              id: payload.new.id,
+              url: payload.new.url,
+              x: payload.new.x,
+              y: payload.new.y,
+              w: payload.new.w,
+              h: payload.new.h,
+              rot: (payload.new.rot_deg || 0) * Math.PI / 180,
+              owner: payload.new.owner,
+              name: payload.new.name || '',
+              showName: false
+            };
+            setSignatures(prev => [...prev, newSig]);
+          } else if (payload.eventType === "DELETE") {
+            setSignatures(prev => prev.filter(p => p.id !== payload.old.id));
+          } else if (payload.eventType === "UPDATE") {
+            setSignatures(prev => prev.map(p => 
+              p.id === payload.new.id ? {
+                ...p,
+                x: payload.new.x,
+                y: payload.new.y,
+                w: payload.new.w,
+                h: payload.new.h,
+                rot: (payload.new.rot_deg || 0) * Math.PI / 180,
+                name: payload.new.name || ''
+              } : p
+            ));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeCampaign]);
+
+  // Handle signature placement
+  const handlePlaceSignature = async () => {
+    if (!userSignature) {
+      setUserMessage("Please create a signature first");
+      return;
+    }
+
+    if (!guidelinesAccepted) {
+      setShowGuidelines(true);
+      return;
+    }
+
+    setUserAction('placing');
+    setUserMessage("Finding the perfect spot for your signature...");
+
+    try {
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          // Calculate final dimensions
+          const baseMax = 360;
+          const ratio = Math.min(1, baseMax / img.width) * signatureSize;
+          const w = Math.max(MIN_SIGNATURE_WIDTH, Math.round(img.width * ratio));
+          const h = Math.max(MIN_SIGNATURE_HEIGHT, Math.round(img.height * ratio));
+          const rotDeg = Math.round(rotation);
+          const rotRad = (rotDeg * Math.PI) / 180;
+
+          // Find placement
+          const placement = await PlacementEngine.findPlacementInMask({
+            text: activeCampaign,
+            imgW: w,
+            imgH: h,
+            rotRad,
+            existing: signatures,
+            maxTries: 800
+          });
+
+          if (!placement) {
+            setUserMessage("The word is getting crowded. Try a smaller size or different rotation.");
+            setUserAction(null);
+            return;
+          }
+
+          // Save to database
+          const signatureData = {
+            campaign: activeCampaign,
+            owner: userId,
+            url: userSignature,
+            x: Math.round(placement.x),
+            y: Math.round(placement.y),
+            w, h,
+            rot_deg: rotDeg,
+            name: displayName.trim().slice(0, 20)
+          };
+
+          const { error } = await supabase
+            .from("word_signatures")
+            .insert(signatureData);
+
+          if (error) {
+            console.error("Error saving signature:", error);
+            setUserMessage("Failed to save your signature. Please try again.");
+          } else {
+            setUserMessage("Your signature has been added to the campaign!");
+            setUserSignature(null);
+            setTimeout(() => locateMySignature(), 500);
+          }
+        } catch (err) {
+          console.error("Placement error:", err);
+          setUserMessage("Something went wrong during placement. Please try again.");
+        } finally {
+          setUserAction(null);
+        }
+      };
+      img.src = userSignature;
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setUserMessage("An unexpected error occurred. Please try again.");
+      setUserAction(null);
+    }
+  };
+
+  // Handle signature removal
+  const handleRemoveSignature = async () => {
+    const userSig = signatures.find(sig => sig.owner === userId);
+    if (!userSig) {
+      setUserMessage("You haven't placed a signature in this campaign yet.");
+      return;
+    }
+
+    setUserAction('erasing');
+    setUserMessage("Removing your signature...");
+
+    try {
+      const { error } = await supabase
         .from("word_signatures")
-        .select("*")
-        .eq("campaign", campaignText)
-        .order("created_at", { ascending: true });
+        .delete()
+        .eq("id", userSig.id);
 
       if (error) {
-        console.error(error);
-        setMessage("If you haven’t created the table yet, run the SQL shown below.");
+        console.error("Error removing signature:", error);
+        setUserMessage("Failed to remove your signature. Please try again.");
       } else {
-        setPlaced(data.map(rowToSig));
+        setUserMessage("Your signature has been removed.");
       }
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      setUserMessage("An unexpected error occurred. Please try again.");
+    } finally {
+      setUserAction(null);
+    }
+  };
 
-      channel = supabase
-        .channel("public:word_signatures")
-        .on("postgres_changes", { event: "*", schema: "public", table: "word_signatures", filter: `campaign=eq.${campaignText}` }, (payload) => {
-          if (payload.eventType === "INSERT") {
-            setPlaced(prev => prev.some(p => p.id === payload.new.id) ? prev : [...prev, rowToSig(payload.new)]);
-          } else if (payload.eventType === "DELETE") {
-            setPlaced(prev => prev.filter(p => p.id !== payload.old.id));
-          } else if (payload.eventType === "UPDATE") {
-            setPlaced(prev => prev.map(p => p.id === payload.new.id ? rowToSig(payload.new) : p));
-          }
-        })
-        .subscribe();
-    })();
+  // Locate user's signature
+  const locateMySignature = () => {
+    const userSig = signatures.find(sig => sig.owner === userId);
+    if (!userSig || !wallScrollRef.current) return;
 
-    return () => { if (channel) supabase.removeChannel(channel); };
-  }, [campaignText]);
-
-  function rowToSig(row) {
-    return {
-      id: row.id, url: row.url,
-      x: row.x, y: row.y, w: row.w, h: row.h,
-      rot: (row.rot_deg || 0) * Math.PI / 180,
-      owner: row.owner, name: row.name || '',
-      showName: false
-    };
-  }
-
-  const palette = ['#111827', '#b91c1c', '#1d4ed8', '#0f766e', '#ca8a04', '#86198f'];
-
-  async function place() {
-    if (!sigDataUrl) return;
-    if (!agreed) { setMessage('Please confirm the community guidelines first.'); return; }
-    if (containsBadWords(displayName)) { setMessage('Please choose a different display name.'); return; }
-    if (!maskReady) { setMessage('Preparing campaign word…'); return; }
-
-    const img = new Image();
-    img.onload = async () => {
-      const baseMax = 360;
-      const s = Math.min(scale, 1.2);
-      const ratio = Math.min(1, baseMax / img.width) * s;
-      const w = Math.max(MIN_W, Math.round(img.width * ratio));
-      const h = Math.max(MIN_H, Math.round(img.height * ratio));
-      const rotDeg = Math.round(rotation);
-      const rot = (rotDeg * Math.PI) / 180;
-
-      const spot = findSpotInMask({ imgW: w, imgH: h, rotRad: rot, existing: placed, maskCanvas });
-      if (!spot) { setMessage("The word is getting crowded here. Try a smaller size or different rotation."); return; }
-
-      const row = {
-        campaign: campaignText,
-        owner: myId,
-        url: sigDataUrl,
-        x: Math.round(spot.x),
-        y: Math.round(spot.y),
-        w, h,
-        rot_deg: rotDeg,
-        name: (displayName || '').slice(0,20)
-      };
-      const { error } = await supabase.from("word_signatures").insert(row).single();
-      if (error) { console.error(error); setMessage("Failed to save. Did you run the SQL to create the table?"); return; }
-
-      setSigDataUrl(null);
-      setAgreed(false);
-      setMessage("Placed! Use zoom and scroll to explore.");
-      setTimeout(() => locateMine(row), 60);
-    };
-    img.src = sigDataUrl;
-  }
-
-  async function eraseMine() {
-    const mine = placed.find(p => p.owner === myId);
-    if (!mine) { setMessage("Nothing to erase."); return; }
-    const { error } = await supabase.from("word_signatures").delete().eq("id", mine.id);
-    if (error) { console.error(error); setMessage("Failed to erase."); return; }
-    setMessage("Your signature was removed.");
-  }
-
-  function locateMine(mineRow) {
-    const target = mineRow
-      ? { x: mineRow.x, y: mineRow.y, w: mineRow.w, h: mineRow.h, id: mineRow.id }
-      : placed.find(p => p.owner === myId);
-    if (!target || !wallScrollRef.current) return;
     const container = wallScrollRef.current;
-    const cx = target.x + target.w / 2;
-    const cy = target.y + target.h / 2;
-    const left = Math.max(0, Math.min(cx - container.clientWidth / (2 * zoom), WALL_W - container.clientWidth / zoom));
-    const top  = Math.max(0, Math.min(cy - container.clientHeight / (2 * zoom), WALL_H - container.clientHeight / zoom));
+    const cx = userSig.x + userSig.w / 2;
+    const cy = userSig.y + userSig.h / 2;
+    
+    const left = Math.max(0, Math.min(
+      cx - container.clientWidth / (2 * zoom), 
+      WALL_WIDTH - container.clientWidth / zoom
+    ));
+    
+    const top = Math.max(0, Math.min(
+      cy - container.clientHeight / (2 * zoom), 
+      WALL_HEIGHT - container.clientHeight / zoom
+    ));
+
     container.scrollTo({ left, top, behavior: "smooth" });
 
-    const el = wallInnerRef.current?.querySelector(`[data-sig-id="${target.id}"]`);
+    // Highlight signature
+    const el = wallInnerRef.current?.querySelector(`[data-sig-id="${userSig.id}"]`);
     if (el) {
       el.setAttribute('data-flash', '1');
       setTimeout(() => el.removeAttribute('data-flash'), 1500);
     }
-  }
+  };
+
+  // Color palette
+  const colorPalette = [
+    '#111827', '#b91c1c', '#1d4ed8', '#0f766e', '#ca8a04', '#86198f',
+    '#dc2626', '#2563eb', '#059669', '#d97706', '#7e22ce'
+  ];
 
   return (
-    <div className="min-h-screen w-full bg-neutral-50 text-neutral-900">
-      <div className="max-w-6xl mx-auto p-6">
-        <header className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Word Campaign</h1>
-            <p className="text-sm text-neutral-600 mt-2">Signatures auto-fill inside the campaign word. No overlaps.</p>
+    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 to-purple-50 text-gray-900">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-bold text-indigo-700">Signature Shards</h1>
+              <span className="ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                Word Campaign
+              </span>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <a 
+                href="/" 
+                className="flex items-center text-sm text-gray-600 hover:text-indigo-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z" clipRule="evenodd" />
+                </svg>
+                Back to Home
+              </a>
+            </div>
           </div>
-          <a href="/" className="text-sm underline">← Back</a>
-        </header>
+        </div>
+      </header>
 
-        <div className="grid md:grid-cols-5 gap-6 items-start">
-          {/* Left */}
-          <div className="md:col-span-2 space-y-4">
-            <div className="p-4 rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <label className="block text-sm mb-2">Campaign text
-                <input
-                  value={campaignText}
-                  onChange={(e)=>setCampaignText(e.target.value.slice(0,40))}
-                  placeholder="e.g., BLACK LIVES MATTER"
-                  className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                />
-              </label>
-              <div className="text-xs text-neutral-500">Tip: keep it short (≤ 3 words) for best fit.</div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Controls */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Campaign Selection */}
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Select Campaign</h2>
+              <div className="space-y-2">
+                {DEFAULT_CAMPAIGNS.map(campaign => (
+                  <button
+                    key={campaign}
+                    onClick={() => setActiveCampaign(campaign)}
+                    className={`w-full text-left px-4 py-3 rounded-lg transition-all ${activeCampaign === campaign 
+                      ? 'bg-indigo-100 border-indigo-500 text-indigo-700 font-medium' 
+                      : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'
+                    } border`}
+                  >
+                    "{campaign}"
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-3">
+                {signatures.length} signatures in this campaign
+              </p>
             </div>
 
-            <div className="p-4 rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <SignaturePad onExport={setSigDataUrl} color={penColor} />
-              <div className="mt-3">
-                <div className="text-sm mb-1">Pen color</div>
-                <div className="flex gap-2">
-                  {['#111827', '#b91c1c', '#1d4ed8', '#0f766e', '#ca8a04', '#86198f'].map(c => (
-                    <button key={c} onClick={()=>setPenColor(c)} className="w-7 h-7 rounded-full border"
-                      style={{ background: c, borderColor: c === '#111827' ? '#e5e7eb' : c }}
-                      aria-label={`Set color ${c}`} />
+            {/* Signature Creation */}
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Create Your Signature</h2>
+              
+              <SignaturePad 
+                onExport={setUserSignature} 
+                color={penColor} 
+                width={320}
+                height={160}
+              />
+              
+              <div className="mt-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Signature Color</p>
+                <div className="flex flex-wrap gap-2">
+                  {colorPalette.map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setPenColor(color)}
+                      className={`w-8 h-8 rounded-full border-2 transition-transform ${penColor === color ? 'scale-110 ring-2 ring-offset-2 ring-indigo-300' : 'hover:scale-105'}`}
+                      style={{ backgroundColor: color, borderColor: color === '#111827' ? '#e5e7eb' : color }}
+                      aria-label={`Select color ${color}`}
+                    />
                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <h3 className="font-medium mb-3">Placement</h3>
-              <label className="block text-sm mb-2">Size
-                <input type="range" min="0.6" max="1.2" step="0.02" value={scale} onChange={(e)=>setScale(parseFloat(e.target.value))} className="w-full"/>
-              </label>
-              <label className="block text-sm mb-2">Rotation ({rotation}°)
-                <input type="range" min="-45" max="45" step="1" value={rotation} onChange={(e)=>setRotation(parseInt(e.target.value))} className="w-full"/>
-              </label>
-
-              <div className="mb-3">
-                <label className="block text-sm mb-1">Optional name (shown on hover)
-                  <input
-                    value={displayName}
-                    onChange={(e)=>setDisplayName(e.target.value.slice(0,20))}
-                    placeholder="e.g., Fils"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            {/* Placement Options */}
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Signature Options</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Size: <span className="text-indigo-600">{Math.round(signatureSize * 100)}%</span>
+                  </label>
+                  <input 
+                    type="range" 
+                    min="60" 
+                    max="120" 
+                    value={signatureSize * 100} 
+                    onChange={e => setSignatureSize(parseInt(e.target.value) / 100)} 
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                   />
-                </label>
-                {containsBadWords(displayName) && (
-                  <div className="text-xs text-red-600">Please choose a different name.</div>
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Smaller</span>
+                    <span>Larger</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rotation: <span className="text-indigo-600">{rotation}°</span>
+                  </label>
+                  <input 
+                    type="range" 
+                    min="-45" 
+                    max="45" 
+                    value={rotation} 
+                    onChange={e => setRotation(parseInt(e.target.value))} 
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>-45°</span>
+                    <span>0°</span>
+                    <span>45°</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Display Name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={e => setDisplayName(e.target.value.slice(0, 20))}
+                    placeholder="How you'll be identified"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {displayName.length}/20 characters
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Add Your Signature</h2>
+              
+              <div className="space-y-3">
+                {userHasSigned ? (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <p className="text-sm text-blue-700 flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      You've already signed this campaign
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                    <p className="text-sm text-amber-700">
+                      Your signature will be permanently added to this artwork
+                    </p>
+                  </div>
                 )}
-              </div>
-
-              <div className="flex gap-2">
-                <button onClick={place} disabled={!sigDataUrl || !agreed}
-                        className={`px-4 py-2 rounded-xl ${sigDataUrl && agreed ? 'bg-black text-white hover:opacity-90' : 'bg-neutral-300 text-neutral-600 cursor-not-allowed'}`}>
-                  Place in Word
+                
+                <button
+                  onClick={handlePlaceSignature}
+                  disabled={!userSignature || userHasSigned || userAction === 'placing'}
+                  className={`w-full py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${
+                    !userSignature || userHasSigned || userAction === 'placing'
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                >
+                  {userAction === 'placing' ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Placing...
+                    </>
+                  ) : userHasSigned ? (
+                    'Already Signed'
+                  ) : (
+                    'Place My Signature'
+                  )}
                 </button>
-                <button onClick={eraseMine} className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200">Erase my signature</button>
-                <button onClick={()=>locateMine()} className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200">Locate my signature</button>
+                
+                <button
+                  onClick={handleRemoveSignature}
+                  disabled={!userHasSigned || userAction === 'erasing'}
+                  className={`w-full py-2 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${
+                    !userHasSigned || userAction === 'erasing'
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {userAction === 'erasing' ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Removing...
+                    </>
+                  ) : (
+                    'Remove My Signature'
+                  )}
+                </button>
+                
+                <button
+                  onClick={locateMySignature}
+                  disabled={!userHasSigned}
+                  className={`w-full py-2 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${
+                    !userHasSigned
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                  </svg>
+                  Find My Signature
+                </button>
+                
+                <div className="flex items-start mt-4">
+                  <input
+                    type="checkbox"
+                    id="guidelinesCheckbox"
+                    checked={guidelinesAccepted}
+                    onChange={e => setGuidelinesAccepted(e.target.checked)}
+                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded mt-1 focus:ring-indigo-500"
+                  />
+                  <label htmlFor="guidelinesCheckbox" className="ml-2 block text-sm text-gray-700">
+                    I agree to the <button 
+                      type="button" 
+                      onClick={() => setShowGuidelines(true)} 
+                      className="text-indigo-600 hover:underline"
+                    >
+                      Community Guidelines
+                    </button>
+                  </label>
+                </div>
               </div>
-              <label className="mt-3 flex items-start gap-2 text-xs text-neutral-600">
-                <input type="checkbox" checked={agreed} onChange={(e)=>setAgreed(e.target.checked)} />
-                I agree to follow the community guidelines for respectful, appropriate content.
-              </label>
-
-              {message && <p className="text-sm text-neutral-600 mt-3">{message}</p>}
+              
+              {userMessage && (
+                <div className={`mt-4 p-3 rounded-lg text-sm ${
+                  userMessage.includes('error') || userMessage.includes('Failed') 
+                    ? 'bg-red-50 text-red-700 border border-red-200' 
+                    : 'bg-green-50 text-green-700 border border-green-200'
+                }`}>
+                  {userMessage}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right: word wall */}
-          <div className="md:col-span-3">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium">Word Wall</h3>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1 text-xs">
-                  Zoom
-                  <button onClick={()=>setZoom(z=>Math.max(0.5, +(z-0.1).toFixed(2)))} className="px-2 py-1 rounded border">-</button>
-                  <span className="w-10 text-center">{Math.round(zoom*100)}%</span>
-                  <button onClick={()=>setZoom(z=>Math.min(2, +(z+0.1).toFixed(2)))} className="px-2 py-1 rounded border">+</button>
+          {/* Right Column - Canvas */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900 mb-2 sm:mb-0">
+                  "{activeCampaign}"
+                </h2>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5">
+                    <button 
+                      onClick={() => setZoom(z => Math.max(0.3, +(z - 0.1).toFixed(1)))}
+                      className="text-gray-600 hover:text-indigo-700 p-1"
+                      aria-label="Zoom out"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    
+                    <span className="mx-2 text-sm font-medium text-gray-700 min-w-[3rem] text-center">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    
+                    <button 
+                      onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(1)))}
+                      className="text-gray-600 hover:text-indigo-700 p-1"
+                      aria-label="Zoom in"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="text-sm text-gray-500 bg-gray-100 rounded-lg px-3 py-1.5">
+                    {signatures.length} signatures
+                  </div>
                 </div>
-                <span className="text-xs text-neutral-500">{placed.length} signatures</span>
+              </div>
+              
+              <div className="relative bg-gray-100 rounded-lg overflow-hidden border border-gray-300">
+                {isLoading ? (
+                  <div className="h-96 flex items-center justify-center">
+                    <div className="text-center">
+                      <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <p className="mt-2 text-gray-600">Loading signatures...</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    ref={wallScrollRef}
+                    className="h-96 overflow-auto relative"
+                  >
+                    <div
+                      ref={wallInnerRef}
+                      className="relative mx-auto my-6"
+                      style={{
+                        width: WALL_WIDTH + 'px',
+                        height: WALL_HEIGHT + 'px',
+                        backgroundSize: '24px 24px',
+                        backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',
+                        transform: `scale(${zoom})`,
+                        transformOrigin: 'top left'
+                      }}
+                    >
+                      {/* Text mask preview (faint outline) */}
+                      <TextMaskGenerator 
+                        text={activeCampaign} 
+                        width={WALL_WIDTH}
+                        height={WALL_HEIGHT}
+                        className="absolute inset-0 opacity-10 pointer-events-none"
+                      />
+                      
+                      {/* Signatures */}
+                      {signatures.map((sig) => (
+                        <div 
+                          key={sig.id} 
+                          data-sig-id={sig.id}
+                          className="absolute select-none transition-transform duration-200 hover:z-10 hover:scale-105"
+                          style={{ 
+                            left: sig.x, 
+                            top: sig.y, 
+                            width: sig.w, 
+                            height: sig.h,
+                            transform: `rotate(${(sig.rot * 180 / Math.PI).toFixed(2)}deg)`,
+                            transformOrigin: 'center'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSignatures(prev => prev.map(s => 
+                              s.id === sig.id 
+                                ? { ...s, showName: !s.showName } 
+                                : { ...s, showName: false }
+                            ));
+                          }}
+                        >
+                          {/* Name tooltip */}
+                          {sig.name && (
+                            <div className={`absolute -top-7 left-1/2 transform -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity ${
+                              sig.showName ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            }`}>
+                              {sig.name}
+                            </div>
+                          )}
+                          
+                          <img 
+                            src={sig.url} 
+                            alt="signature" 
+                            className="w-full h-full"
+                            draggable={false}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-4 text-sm text-gray-600">
+                <p>✨ Each signature is placed without overlapping others, creating a beautiful mosaic within the campaign text.</p>
+                <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on signatures to see who left them.</p>
               </div>
             </div>
-
-            <div ref={wallScrollRef} className="h-[70vh] rounded-2xl border border-neutral-200 bg-white shadow-sm overflow-auto">
-              <div
-                ref={wallInnerRef}
-                className="relative mx-auto my-6"
-                style={{
-                  width: WALL_W + 'px',
-                  height: WALL_H + 'px',
-                  backgroundSize: '24px 24px',
-                  backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',
-                  transform: `scale(${zoom})`,
-                  transformOrigin: 'top left'
-                }}
-              >
-                {/* Show the text mask as a faint guide */}
-                <MaskPreview maskCanvas={maskCanvas} />
-
-                {/* Placed signatures */}
-                {placed.map((p) => (
-                  <div key={p.id} data-sig-id={p.id} className="absolute select-none group"
-                       style={{ left: p.x, top: p.y, width: p.w, height: p.h,
-                                transform: `rotate(${(p.rot*180/Math.PI).toFixed(2)}deg)`,
-                                transformOrigin: 'top left' }}
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         setPlaced(prev => prev.map(s => s.id === p.id ? ({ ...s, showName: !s.showName }) : ({ ...s, showName: false })));
-                       }}>
-                    {p.name && (
-                      p.showName
-                        ? <div className="absolute -top-5 left-0 text-[10px] px-1.5 py-[2px] rounded bg-black text-white" style={{pointerEvents:'none'}}>{p.name}</div>
-                        : <div className="absolute -top-5 left-0 text-[10px] px-1.5 py-[2px] rounded bg-black text-white opacity-0 group-hover:opacity-100" style={{pointerEvents:'none'}}>{p.name}</div>
-                    )}
-                    <img src={p.url} alt="signature" className="w-full h-full" draggable={false} />
-                  </div>
-                ))}
+            
+            {/* Campaign Info */}
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+              <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>
+              <p className="text-sm text-gray-600">
+                This word campaign brings together community signatures to form a powerful visual statement. 
+                Each signature is a unique contribution to the collective message.
+              </p>
+              
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                  Share Campaign
+                </button>
+                <button className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                  Download Image
+                </button>
+                <button className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                  Report Issue
+                </button>
               </div>
             </div>
           </div>
         </div>
+      </main>
 
-        <style>{`
-          [data-flash="1"] { box-shadow: 0 0 0 4px rgba(34,197,94,0.45), 0 0 0 10px rgba(34,197,94,0.18); transition: box-shadow 0.3s; }
-        `}</style>
+      {/* Community Guidelines Modal */}
+      <CommunityGuidelinesModal 
+        isOpen={showGuidelines}
+        onClose={() => setShowGuidelines(false)}
+        onAccept={() => {
+          setGuidelinesAccepted(true);
+          setShowGuidelines(false);
+        }}
+      />
 
-        <footer className="mt-8 text-xs text-neutral-500">
-          If the table isn’t created yet, run the SQL below in Supabase → SQL Editor once.
-        </footer>
-
-        <details className="mt-3 text-xs">
-          <summary className="cursor-pointer">Show SQL for <code>word_signatures</code> table</summary>
-          <pre className="p-3 bg-neutral-100 rounded-lg overflow-auto">
-{`create table if not exists public.word_signatures (
-  id uuid primary key default gen_random_uuid(),
-  campaign text not null,
-  owner text not null,
-  url text not null,
-  x int not null,
-  y int not null,
-  w int not null,
-  h int not null,
-  rot_deg int not null default 0,
-  name text,
-  created_at timestamptz default now()
-);
-
-alter publication supabase_realtime add table public.word_signatures;
-alter table public.word_signatures enable row level security;
-
-drop policy if exists ws_select_all on public.word_signatures;
-drop policy if exists ws_insert_all on public.word_signatures;
-drop policy if exists ws_delete_all on public.word_signatures;
-
-create policy ws_select_all on public.word_signatures
-  for select using (true);
-
-create policy ws_insert_all on public.word_signatures
-  for insert with check (true);
-
-create policy ws_delete_all on public.word_signatures
-  for delete using (true);`}
-          </pre>
-        </details>
-      </div>
+      <style jsx>{`
+        [data-flash="1"] {
+          animation: flash 1.5s ease-in-out;
+        }
+        
+        @keyframes flash {
+          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        
+        /* Custom range slider */
+        input[type="range"] {
+          -webkit-appearance: none;
+          height: 6px;
+          background: #e5e7eb;
+          border-radius: 3px;
+          outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+      `}</style>
     </div>
   );
 }
 
-function MaskPreview({ maskCanvas }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!ref.current || !maskCanvas) return;
-    const ctx = ref.current.getContext("2d");
-    ref.current.width = WALL_W;
-    ref.current.height = WALL_H;
-    ctx.clearRect(0,0,WALL_W,WALL_H);
-    ctx.globalAlpha = 0.08;
-    ctx.drawImage(maskCanvas, 0, 0);
-    ctx.globalAlpha = 1;
-  }, [maskCanvas]);
-  return <canvas ref={ref} className="absolute inset-0 w-full h-full pointer-events-none" style={{ width: WALL_W, height: WALL_H }} />;
-}
+export default WordCampaignBoard;
