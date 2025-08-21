@@ -468,7 +468,7 @@ export default function CampaignBoard() {
   const [rotation, setRotation] = useState(0);
   const [displayName, setDisplayName] = useState("");
   const [zoom, setZoom] = useState(0.5);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [userMessage, setUserMessage] = useState("");
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [guidelinesAccepted, setGuidelinesAccepted] = useState(false);
@@ -549,8 +549,6 @@ export default function CampaignBoard() {
       } catch (err) {
         console.error("Error loading campaigns:", err);
         setUserMessage("Failed to load campaigns. Please refresh.");
-      } finally {
-        setIsLoading(false); // Ensure loading state is cleared
       }
     };
     
@@ -562,7 +560,6 @@ export default function CampaignBoard() {
     if (!activeCampaign) return;
     
     const loadConfessions = async () => {
-      setIsLoading(true);
       try {
         const { data, error } = await supabase  
           .from("confessions")  
@@ -600,8 +597,6 @@ export default function CampaignBoard() {
       } catch (err) {
         console.error("Error loading confessions:", err);  
         setUserMessage("Unable to load confessions. Please refresh the page.");  
-      } finally {
-        setIsLoading(false); // Ensure loading state is cleared
       }
     };
     
@@ -1716,41 +1711,41 @@ export default function CampaignBoard() {
                 </div>  
                   
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden border border-gray-300">  
-                  <div   
-                    ref={wallScrollRef}  
-                    className="h-[60vh] overflow-auto relative"  
-                    onClick={onWallClick}
-                  >  
-                    <div
-                      ref={wallInnerRef}  
-                      className="relative mx-auto my-6 min-w-full min-h-full"
-                      style={{  
-                        width: `${WALL_WIDTH}px`,  
-                        height: `${WALL_HEIGHT}px`,  
-                        backgroundSize: '24px 24px',  
-                        backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',  
-                        backgroundRepeat: 'repeat',
-                        transform: `scale(${zoom})`,  
-                        transformOrigin: 'center center'
-                      }}  
+                    <div   
+                      ref={wallScrollRef}  
+                      className="h-[60vh] overflow-auto relative"  
+                      onClick={onWallClick}
                     >  
-                      {placementMode === 'manual' && pendingManualSpot && (
-                        <div 
-                          className="absolute pointer-events-none"
-                          style={{ 
-                            left: pendingManualSpot.x - 8, 
-                            top: pendingManualSpot.y - 8, 
-                            width: 16, 
-                            height: 16,
-                            borderRadius: '50%', 
-                            border: '2px solid #3b82f6', 
-                            boxShadow: '0 0 0 4px rgba(59,130,246,0.2)',
-                            zIndex: 1000
-                          }} 
-                        />
-                      )}
-                        
-                      {confessions.map((conf) => (  
+                      <div
+                        ref={wallInnerRef}  
+                        className="relative mx-auto my-6 min-w-full min-h-full"
+                        style={{  
+                          width: `${WALL_WIDTH}px`,  
+                          height: `${WALL_HEIGHT}px`,  
+                          backgroundSize: '24px 24px',  
+                          backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',  
+                          backgroundRepeat: 'repeat',
+                          transform: `scale(${zoom})`,  
+                          transformOrigin: 'center center'
+                        }}  
+                      >  
+                        {placementMode === 'manual' && pendingManualSpot && (
+                          <div 
+                            className="absolute pointer-events-none"
+                            style={{ 
+                              left: pendingManualSpot.x - 8, 
+                              top: pendingManualSpot.y - 8, 
+                              width: 16, 
+                              height: 16,
+                              borderRadius: '50%', 
+                              border: '2px solid #3b82f6', 
+                              boxShadow: '0 0 0 4px rgba(59,130,246,0.2)',
+                              zIndex: 1000
+                            }} 
+                          />
+                        )}
+                          
+                        {confessions.map((conf) => (  
                           <div   
                             key={conf.id}   
                             data-conf-id={conf.id}  
@@ -1785,110 +1780,148 @@ export default function CampaignBoard() {
                                 fontFamily: conf.font_family || 'Arial',
                                 fontSize: `${conf.font_size || 14}px`,
                                 overflow: 'hidden',
-                                wordBreak: 'break-word'
+                                wordBreak: 'break-word',
+                                animation: conf.needs_moderation ? 'pulse 2s infinite' : 'none'
                               }}
                             >
                               {conf.text}
                             </div>
-                          </div>  
-                        ))}  
-                      </div>  
-                    </div>  
-                  )}  
-                </div>  
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {pendingManualSpot && (
+                      <div className="absolute top-4 right-4 bg-blue-100 text-blue-800 px-3 py-1 rounded text-sm">
+                        Manual placement active - click "Post to Wall" to confirm
+                      </div>
+                    )}
+                  </div>
                   
-                <div className="mt-4 text-sm text-gray-600">  
-                  <p>✨ Each confession is styled uniquely, creating a beautiful mosaic of thoughts and secrets.</p>  
-                  <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on confessions to see who posted them.</p>  
-                </div>  
-              </div>  
-                
-              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
-                <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>  
-                <p className="text-sm text-gray-600">  
-                  {activeCampaign.description || "This campaign brings together community confessions to form a visual tapestry of shared experiences. Each confession is a unique contribution to the collective story."}  
-                </p>  
-                  
-                <div className="mt-4 flex flex-wrap gap-2">  
-                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    Share Campaign  
-                  </button>  
-                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    Download Image  
-                  </button>  
-                  <button onClick={() => setShowTimeLapse(true)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    View Time Lapse  
-                  </button>  
-                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    Report Issue  
-                  </button>  
-                  <button onClick={fitToFullContent} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    View Full Campaign  
-                  </button>  
-                </div>  
-              </div>  
-            </div>  
-          </div>  
+                  <div className="flex justify-between items-center mt-4">
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={fitToFullContent}
+                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 6a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 6a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                        </svg>
+                        Fit to Content
+                      </button>
+                      <button
+                        onClick={() => setShowTimeLapse(true)}
+                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                        </svg>
+                        View Time Lapse
+                      </button>
+                    </div>
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={shareCampaign}
+                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
+                        </svg>
+                        Share
+                      </button>
+                      <button
+                        onClick={downloadImage}
+                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                        Download
+                      </button>
+                      <button
+                        onClick={reportIssue}
+                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        Report Issue
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
+
+        <CommunityGuidelinesModal
+          isOpen={showGuidelines}
+          onClose={() => {
+            setShowGuidelines(false);
+            if (!guidelinesAccepted) {
+              setUserAction(null);
+            }
+          }}
+          onAccept={() => {
+            setGuidelinesAccepted(true);
+            setShowGuidelines(false);
+            if (userAction === 'placing') {
+              handlePlaceConfession();
+            }
+          }}
+        />
+
+        <AdminLoginModal
+          isOpen={showAdminLogin}
+          onClose={() => setShowAdminLogin(false)}
+          onLogin={() => setIsAdminLoggedIn(true)}
+        />
+
+        <TimeLapseModal
+          isOpen={showTimeLapse}
+          onClose={() => setShowTimeLapse(false)}
+          confessions={confessions}
+          activeCampaign={activeCampaign}
+        />
       </main>
 
-      <CommunityGuidelinesModal
-        isOpen={showGuidelines}
-        onClose={() => setShowGuidelines(false)}
-        onAccept={() => {
-          setGuidelinesAccepted(true);
-          setShowGuidelines(false);
-        }}
-      />
-
-      <AdminLoginModal
-        isOpen={showAdminLogin}
-        onClose={() => setShowAdminLogin(false)}
-        onLogin={() => setIsAdminLoggedIn(true)}
-      />
-
-      <TimeLapseModal
-        isOpen={showTimeLapse}
-        onClose={() => setShowTimeLapse(false)}
-        confessions={confessions}
-        activeCampaign={activeCampaign}
-      />
-
-      <style>{`
+      <style jsx>{`
+        @keyframes pulse {
+          0% { opacity: 0.7; }
+          50% { opacity: 0.9; }
+          100% { opacity: 0.7; }
+        }
+        
         [data-flash="1"] {
           animation: flash 1.5s ease-in-out;
         }
+        
         @keyframes flash {
-          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
-          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+          50% { box-shadow: 0 0 0 8px rgba(59,130,246,0.3); }
         }
-        input[type="range"] {
-          -webkit-appearance: none;
-          height: 6px;
-          background: #e5e7eb;
-          border-radius: 3px;
-          outline: none;
+        
+        .rounded-rect {
+          border-radius: 16px;
         }
+        
         input[type="range"]::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
+          width: 16px;
+          height: 16px;
           background: #4f46e5;
+          border-radius: 50%;
           cursor: pointer;
-          border: 2px solid white;
-          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
         }
+        
         input[type="range"]::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
+          width: 16px;
+          height: 16px;
           background: #4f46e5;
+          border-radius: 50%;
           cursor: pointer;
-          border: 2px solid white;
-          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+          border: none;
         }
       `}</style>
     </div>
