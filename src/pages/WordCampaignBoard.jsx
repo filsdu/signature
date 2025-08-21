@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import html2canvas from "html2canvas";
 
 // Supabase client
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -118,15 +117,15 @@ const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200 }
     
     if (!hasInk) return null;
     
-    const trimW = Math.max(1, maxX - minX + 10);
-    const trimH = Math.max(1, maxY - minY + 10);
+    const trimW = Math.max(1, maxX - minX + 4); // Reduced padding for tighter bounds
+    const trimH = Math.max(1, maxY - minY + 4);
     
     const out = document.createElement('canvas');
     out.width = trimW;
     out.height = trimH;
     
     const octx = out.getContext('2d');
-    octx.drawImage(canvas, minX-5, minY-5, trimW, trimH, 0, 0, trimW, trimH);
+    octx.drawImage(canvas, minX-2, minY-2, trimW, trimH, 0, 0, trimW, trimH);
     
     return out.toDataURL('image/png');
   };
@@ -173,6 +172,79 @@ const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200 }
   );
 };
 
+// Function to draw text on canvas (shared for mask and outline)
+const drawTextOnCanvas = (ctx, text, width, height, isMask = false) => {
+  ctx.clearRect(0, 0, width, height);
+  if (isMask) {
+    ctx.fillStyle = "#000";
+  } else {
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
+    ctx.lineWidth = 8; // Thicker outline for better visibility
+  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const characters = text.replace(/\s+/g, '').split(""); // Remove spaces, treat as letters
+  const charCount = characters.length;
+  if (charCount === 0) return;
+
+  // Find optimal rows for maximum font size
+  let bestRows = 1;
+  let maxMinSize = 0;
+  for (let rows = 1; rows <= charCount; rows++) {
+    const cols = Math.ceil(charCount / rows);
+    const cellW = width / cols;
+    const cellH = height / rows;
+    const minSize = Math.min(cellW, cellH);
+    if (minSize > maxMinSize) {
+      maxMinSize = minSize;
+      bestRows = rows;
+    }
+  }
+
+  const rows = bestRows;
+  const cols = Math.ceil(charCount / rows);
+  const cellWidth = width / cols;
+  const cellHeight = height / rows;
+
+  // Determine maximum font size
+  let fontSize = maxMinSize * 1.95; // Increased for larger text
+  const fontFamily = "'Arial Black', Gadget, sans-serif";
+  ctx.font = `bold ${fontSize}px ${fontFamily}`;
+
+  // Adjust font size based on widest character
+  let maxTextWidth = 0;
+  for (let char of characters) {
+    maxTextWidth = Math.max(maxTextWidth, ctx.measureText(char).width);
+  }
+  while (maxTextWidth > cellWidth * 0.98 && fontSize > 10) { // Closer to full width
+    fontSize -= 1; // Finer adjustment
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    maxTextWidth = 0;
+    for (let char of characters) {
+      maxTextWidth = Math.max(maxTextWidth, ctx.measureText(char).width);
+    }
+  }
+
+  // Draw each character
+  let charIndex = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (charIndex >= charCount) break;
+      const char = characters[charIndex];
+      const x = col * cellWidth + cellWidth / 2;
+      const y = row * cellHeight + cellHeight / 2;
+      ctx.font = `bold ${fontSize}px ${fontFamily}`;
+      if (isMask) {
+        ctx.fillText(char, x, y);
+      } else {
+        ctx.strokeText(char, x, y);
+      }
+      charIndex++;
+    }
+  }
+};
+
 // Text Outline Generator Component
 const TextOutlineGenerator = ({ text, width, height, className = "" }) => {
   const canvasRef = useRef(null);
@@ -180,66 +252,10 @@ const TextOutlineGenerator = ({ text, width, height, className = "" }) => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !text) return;
-    
     const ctx = canvas.getContext("2d");
     canvas.width = width;
     canvas.height = height;
-    ctx.clearRect(0, 0, width, height);
-    
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.lineWidth = 3;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    
-    // Split text into characters for multi-line layout
-    const characters = text.split("");
-    const charCount = characters.length;
-    
-    // Determine layout - single line for short text, multi-line for longer text
-    let rows = 1;
-    let cols = charCount;
-    
-    if (charCount > 6) {
-      // For longer text, use multiple rows
-      rows = Math.ceil(Math.sqrt(charCount));
-      cols = Math.ceil(charCount / rows);
-    }
-    
-    const cellWidth = width / cols;
-    const cellHeight = height / rows;
-    
-    // Find the maximum font size that fits all cells
-    let fontSize = Math.min(cellWidth, cellHeight) * 1.8;
-    const fontFamily = "'Arial Black', Arial, sans-serif";
-    ctx.font = `bold ${fontSize}px ${fontFamily}`;
-    
-    // Adjust font size if any character is too wide
-    for (let i = 0; i < charCount; i++) {
-      const char = characters[i];
-      const metrics = ctx.measureText(char);
-      const textWidth = metrics.width;
-      
-      while (textWidth > cellWidth * 0.9 && fontSize > 10) {
-        fontSize -= 2;
-        ctx.font = `bold ${fontSize}px ${fontFamily}`;
-      }
-    }
-    
-    // Draw each character in its cell
-    let charIndex = 0;
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        if (charIndex >= charCount) break;
-        
-        const char = characters[charIndex];
-        const x = col * cellWidth + cellWidth / 2;
-        const y = row * cellHeight + cellHeight / 2;
-        
-        ctx.font = `bold ${fontSize}px ${fontFamily}`;
-        ctx.strokeText(char, x, y);
-        charIndex++;
-      }
-    }
+    drawTextOnCanvas(ctx, text, width, height, false);
   }, [text, width, height]);
 
   return (
@@ -309,16 +325,17 @@ const PlacementEngine = {
     return { rw, rh };
   },
 
-  // Check if two rectangles overlap
+  // Check if two rectangles overlap (with buffer for safety)
   overlaps: (a, b) => {
-    return a.x < b.x + b.w &&
-           a.x + a.w > b.x &&  
-           a.y < b.y + b.h &&  
-           a.y + a.h > b.y;
+    const buffer = 5; // Add buffer to prevent close placements
+    return a.x < b.x + b.w + buffer &&
+           a.x + a.w + buffer > b.x &&  
+           a.y < b.y + b.h + buffer &&  
+           a.y + a.h + buffer > b.y;
   },
 
   // Create a grid for spatial partitioning
-  createSpatialGrid: (width, height, cellSize = 100) => {
+  createSpatialGrid: (width, height, cellSize = 80) => { // Smaller cell for better performance
     const grid = {};
     
     const getCellKey = (x, y) => `${Math.floor(x/cellSize)},${Math.floor(y/cellSize)}`;
@@ -346,8 +363,8 @@ const PlacementEngine = {
         const endY = Math.floor((y + h) / cellSize);  
         
         const items = new Set();  
-        for (let i = startX; i <= endX; i++) {  
-          for (let j = startY; j <= endY; j++) {  
+        for (let i = startX - 1; i <= endX + 1; i++) { // Expand search for safety
+          for (let j = startY - 1; j <= endY + 1; j++) {  
             const key = `${i},${j}`;  
             if (grid[key]) {  
               grid[key].forEach(item => items.add(item));  
@@ -360,7 +377,7 @@ const PlacementEngine = {
   },
 
   // Find placement inside text mask
-  findPlacementInMask: ({ maskCanvas, imgW, imgH, rotRad, existing, maxTries = 2000 }) => {
+  findPlacementInMask: ({ maskCanvas, imgW, imgH, rotRad, existing, maxTries = 5000 }) => { // Increased tries
     const { rw, rh } = PlacementEngine.rotatedBounds(imgW, imgH, rotRad);
     const w = Math.ceil(rw);
     const h = Math.ceil(rh);
@@ -375,18 +392,17 @@ const PlacementEngine = {
       grid.add(item, item.x, item.y, bounds.rw, bounds.rh);
     });
 
-    // Check if a rectangle is inside the text mask
+    // Check if a rectangle is inside the text mask with dense sampling
     const rectIsInsideMask = (x, y) => {
-      // Sample multiple points inside the rectangle
-      const samples = 16; // Increased from 9 to 16 for better accuracy
+      const samples = 25; // 5x5 grid for better coverage
       let insideCount = 0;
       
       for (let i = 0; i < samples; i++) {
-        const sampleX = i % 4; // 4x4 grid
-        const sampleY = Math.floor(i / 4);
+        const sampleX = i % 5;
+        const sampleY = Math.floor(i / 5);
         
-        const px = Math.floor(x + sampleX * (w / 3));  
-        const py = Math.floor(y + sampleY * (h / 3));  
+        const px = Math.floor(x + sampleX * (w / 4));  
+        const py = Math.floor(y + sampleY * (h / 4));  
         
         if (px >= 0 && px < maskCanvas.width && py >= 0 && py < maskCanvas.height) {  
           const idx = (py * maskCanvas.width + px) * 4 + 3; // alpha channel  
@@ -394,7 +410,7 @@ const PlacementEngine = {
         }
       }
       
-      return insideCount >= 12; // At least 12 of 16 points should be inside
+      return insideCount >= 22; // Strict: at least 22/25 points inside
     };
 
     // Try to find a valid position
@@ -436,6 +452,8 @@ const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
     if (password === "TokloPazatGamer") {
       onLogin();
       onClose();
+    } else {
+      alert("Incorrect password");
     }
   };
 
@@ -497,7 +515,6 @@ export default function WordCampaignBoard() {
   const [guidelinesAccepted, setGuidelinesAccepted] = useState(false);
   const [userAction, setUserAction] = useState(null);
   const [maskCanvas, setMaskCanvas] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [newCampaignText, setNewCampaignText] = useState("");
@@ -508,10 +525,10 @@ export default function WordCampaignBoard() {
 
   // User session ID
   const userId = useMemo(() => {
-    let id = sessionStorage.getItem('signatureShardsUserId');
+    let id = localStorage.getItem('signatureShardsUserId'); // Changed to localStorage for persistence
     if (!id) {
-      id = crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
-      sessionStorage.setItem('signatureShardsUserId', id);
+      id = crypto.randomUUID(); // Better unique ID
+      localStorage.setItem('signatureShardsUserId', id);
     }
     return id;
   }, []);
@@ -526,15 +543,12 @@ export default function WordCampaignBoard() {
   useEffect(() => {
     const loadCampaigns = async () => {
       try {
-        // In a real app, you'd fetch from your campaigns table  
-        // For now, we'll use localStorage as a simple solution  
         const savedCampaigns = JSON.parse(localStorage.getItem('signatureShardsCampaigns') || '[]');  
         
         if (savedCampaigns.length > 0) {  
           setCampaigns(savedCampaigns);  
           setActiveCampaign(savedCampaigns[0]);  
         } else {  
-          // Default campaigns if none exist  
           const defaultCampaigns = ["FREEDOM", "EQUALITY", "JUSTICE"];  
           setCampaigns(defaultCampaigns);  
           setActiveCampaign(defaultCampaigns[0]);  
@@ -542,6 +556,7 @@ export default function WordCampaignBoard() {
         }
       } catch (err) {
         console.error("Error loading campaigns:", err);
+        setUserMessage("Failed to load campaigns. Please refresh.");
       }
     };
     
@@ -556,62 +571,7 @@ export default function WordCampaignBoard() {
     canvas.width = WALL_WIDTH;
     canvas.height = WALL_HEIGHT;
     const ctx = canvas.getContext("2d");
-    
-    ctx.clearRect(0, 0, WALL_WIDTH, WALL_HEIGHT);
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    
-    // Split text into characters for multi-line layout
-    const characters = activeCampaign.split("");
-    const charCount = characters.length;
-    
-    // Determine layout - single line for short text, multi-line for longer text
-    let rows = 1;
-    let cols = charCount;
-    
-    if (charCount > 6) {
-      // For longer text, use multiple rows
-      rows = Math.ceil(Math.sqrt(charCount));
-      cols = Math.ceil(charCount / rows);
-    }
-    
-    const cellWidth = WALL_WIDTH / cols;
-    const cellHeight = WALL_HEIGHT / rows;
-    
-    // Find the maximum font size that fits all cells
-    let fontSize = Math.min(cellWidth, cellHeight) * 1.8;
-    const fontFamily = "'Arial Black', Arial, sans-serif";
-    ctx.font = `bold ${fontSize}px ${fontFamily}`;
-    
-    // Adjust font size if any character is too wide
-    for (let i = 0; i < charCount; i++) {
-      const char = characters[i];
-      const metrics = ctx.measureText(char);
-      const textWidth = metrics.width;
-      
-      while (textWidth > cellWidth * 0.9 && fontSize > 10) {
-        fontSize -= 2;
-        ctx.font = `bold ${fontSize}px ${fontFamily}`;
-      }
-    }
-    
-    // Draw each character in its cell
-    let charIndex = 0;
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        if (charIndex >= charCount) break;
-        
-        const char = characters[charIndex];
-        const x = col * cellWidth + cellWidth / 2;
-        const y = row * cellHeight + cellHeight / 2;
-        
-        ctx.font = `bold ${fontSize}px ${fontFamily}`;
-        ctx.fillText(char, x, y);
-        charIndex++;
-      }
-    }
-    
+    drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, true);
     setMaskCanvas(canvas);
   }, [activeCampaign]);
 
@@ -628,27 +588,24 @@ export default function WordCampaignBoard() {
           .eq("campaign", activeCampaign)  
           .order("created_at", { ascending: true });  
         
-        if (error) {  
-          console.error("Error loading signatures:", error);  
-          setUserMessage("Unable to load signatures. Please refresh the page.");  
-        } else {  
-          const formattedSignatures = data.map(row => ({  
-            id: row.id,  
-            url: row.url,  
-            x: row.x,  
-            y: row.y,  
-            w: row.w,  
-            h: row.h,  
-            rot: (row.rot_deg || 0) * Math.PI / 180,  
-            owner: row.owner,  
-            name: row.name || '',  
-            showName: false  
-          }));  
-          setSignatures(formattedSignatures);  
-        }
+        if (error) throw error;
+        
+        const formattedSignatures = data.map(row => ({  
+          id: row.id,  
+          url: row.url,  
+          x: row.x,  
+          y: row.y,  
+          w: row.w,  
+          h: row.h,  
+          rot: (row.rot_deg || 0) * Math.PI / 180,  
+          owner: row.owner,  
+          name: row.name || '',  
+          showName: false  
+        }));  
+        setSignatures(formattedSignatures);  
       } catch (err) {
-        console.error("Unexpected error:", err);  
-        setUserMessage("An unexpected error occurred. Please refresh the page.");  
+        console.error("Error loading signatures:", err);  
+        setUserMessage("Unable to load signatures. Please refresh the page.");  
       } finally {
         setIsLoading(false);
       }
@@ -698,7 +655,9 @@ export default function WordCampaignBoard() {
           }  
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) console.error("Subscription error:", err);
+      });
     
     return () => {
       supabase.removeChannel(channel);
@@ -724,7 +683,6 @@ export default function WordCampaignBoard() {
       const img = new Image();
       img.onload = async () => {
         try {  
-          // Calculate dimensions with constrained size variation  
           const baseSize = Math.min(img.width, img.height);  
           const targetSize = MIN_SIGNATURE_WIDTH + (MAX_SIGNATURE_WIDTH - MIN_SIGNATURE_WIDTH) * signatureSize;  
           const ratio = targetSize / baseSize;  
@@ -732,18 +690,16 @@ export default function WordCampaignBoard() {
           const w = Math.max(MIN_SIGNATURE_WIDTH, Math.min(MAX_SIGNATURE_WIDTH, Math.round(img.width * ratio)));  
           const h = Math.max(MIN_SIGNATURE_HEIGHT, Math.min(MAX_SIGNATURE_HEIGHT, Math.round(img.height * ratio)));  
           
-          // Slight random rotation for visual interest (-10 to +10 degrees)  
-          const rotDeg = Math.round(rotation + (Math.random() * 20 - 10)); // ← make it an INT
+          const rotDeg = Math.round(rotation + (Math.random() * 20 - 10));
           const rotRad = (rotDeg * Math.PI) / 180;
     
-          // Find placement  
           const placement = PlacementEngine.findPlacementInMask({  
             maskCanvas,  
             imgW: w,  
             imgH: h,  
             rotRad,  
             existing: signatures,  
-            maxTries: 2500  
+            maxTries: 5000  
           });
     
           if (!placement) {  
@@ -752,7 +708,6 @@ export default function WordCampaignBoard() {
             return;  
           }
     
-          // Save to database  
           const signatureData = {  
             campaign: activeCampaign,  
             owner: userId,  
@@ -768,20 +723,21 @@ export default function WordCampaignBoard() {
             .from("word_signatures")  
             .insert(signatureData);
     
-          if (error) {  
-            console.error("Error saving signature:", error);  
-            setUserMessage("Failed to save your signature. Please try again.");  
-          } else {  
-            setUserMessage("Your signature has been added to the campaign!");  
-            setUserSignature(null);  
-            setTimeout(() => locateMySignature(), 500);  
-          }  
+          if (error) throw error;
+          
+          setUserMessage("Your signature has been added to the campaign!");  
+          setUserSignature(null);  
+          setTimeout(() => locateMySignature(), 500);  
         } catch (err) {  
           console.error("Placement error:", err);  
           setUserMessage("Something went wrong during placement. Please try again.");  
         } finally {  
           setUserAction(null);  
         }
+      };
+      img.onerror = () => {
+        setUserMessage("Failed to load signature image.");
+        setUserAction(null);
       };
       img.src = userSignature;
     } catch (err) {
@@ -791,8 +747,10 @@ export default function WordCampaignBoard() {
     }
   };
 
-  // Handle signature removal
+  // Handle signature removal with confirmation
   const handleRemoveSignature = async () => {
+    if (!window.confirm("Are you sure you want to remove your signature?")) return;
+
     const userSig = signatures.find(sig => sig.owner === userId);
     if (!userSig) {
       setUserMessage("You haven't placed a signature in this campaign yet.");
@@ -806,17 +764,15 @@ export default function WordCampaignBoard() {
       const { error } = await supabase
         .from("word_signatures")  
         .delete()  
-        .eq("id", userSig.id);
+        .eq("id", userSig.id)
+        .eq("owner", userId); // Extra check for security
       
-      if (error) {
-        console.error("Error removing signature:", error);  
-        setUserMessage("Failed to remove your signature. Please try again.");  
-      } else {
-        setUserMessage("Your signature has been removed.");  
-      }
+      if (error) throw error;
+      
+      setUserMessage("Your signature has been removed.");  
     } catch (err) {
-      console.error("Unexpected error:", err);
-      setUserMessage("An unexpected error occurred. Please try again.");  
+      console.error("Error removing signature:", err);  
+      setUserMessage("Failed to remove your signature. Please try again.");  
     } finally {
       setUserAction(null);
     }
@@ -825,11 +781,15 @@ export default function WordCampaignBoard() {
   // Locate user's signature
   const locateMySignature = () => {
     const userSig = signatures.find(sig => sig.owner === userId);
-    if (!userSig || !wallScrollRef.current) return;
+    if (!userSig || !wallScrollRef.current) {
+      setUserMessage("No signature found.");
+      return;
+    }
     
     const container = wallScrollRef.current;
-    const cx = userSig.x + userSig.w / 2;
-    const cy = userSig.y + userSig.h / 2;
+    const { rw, rh } = PlacementEngine.rotatedBounds(userSig.w, userSig.h, userSig.rot);
+    const cx = userSig.x + rw / 2;
+    const cy = userSig.y + rh / 2;
     
     const left = Math.max(0, Math.min(
       cx - container.clientWidth / (2 * zoom),
@@ -853,54 +813,72 @@ export default function WordCampaignBoard() {
 
   // Create new campaign
   const handleCreateCampaign = () => {
-    if (!newCampaignText.trim()) return;
+    const trimmed = newCampaignText.trim().toUpperCase();
+    if (!trimmed || campaigns.includes(trimmed)) return;
     
-    const newCampaigns = [...campaigns, newCampaignText.trim().toUpperCase()];
+    const newCampaigns = [...campaigns, trimmed];
     setCampaigns(newCampaigns);
-    setActiveCampaign(newCampaignText.trim().toUpperCase());
+    setActiveCampaign(trimmed);
     setNewCampaignText("");
     localStorage.setItem('signatureShardsCampaigns', JSON.stringify(newCampaigns));
   };
 
   // Share campaign
-  const shareCampaign = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: `Signature Shards Campaign: ${activeCampaign}`,
-        text: `Check out this signature campaign for ${activeCampaign} on Signature Shards!`,
-        url: window.location.href,
-      })
-      .catch(console.error);
-    } else {
-      // Fallback for browsers that don't support Web Share API
-      navigator.clipboard.writeText(window.location.href);
-      setUserMessage("Campaign link copied to clipboard!");
+  const shareCampaign = async () => {
+    const shareData = {
+      title: `Signature Shards Campaign: ${activeCampaign}`,
+      text: `Join the signature campaign for ${activeCampaign} on Signature Shards!`,
+      url: window.location.href,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareData.url);
+        setUserMessage("Campaign link copied to clipboard!");
+      }
+    } catch (err) {
+      console.error("Share error:", err);
+      setUserMessage("Failed to share. Please copy the URL manually.");
     }
   };
 
-  // Download campaign image
+  // Download campaign image using canvas API
   const downloadImage = async () => {
-    if (!wallInnerRef.current) return;
-    
     setUserMessage("Preparing your download...");
     
     try {
-      const canvas = await html2canvas(wallInnerRef.current, {
-        backgroundColor: null,
-        scale: 2,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        onclone: (clonedDoc) => {
-          // Make sure all signatures are visible in the clone
-          const clonedWall = clonedDoc.querySelector('[data-wall-inner]');
-          if (clonedWall) {
-            clonedWall.style.transform = 'scale(1)';
-            clonedWall.style.transformOrigin = 'top left';
-          }
-        }
-      });
+      // Create a canvas to render the entire campaign
+      const canvas = document.createElement('canvas');
+      canvas.width = WALL_WIDTH;
+      canvas.height = WALL_HEIGHT;
+      const ctx = canvas.getContext('2d');
       
+      // Fill background
+      ctx.fillStyle = '#f9fafb';
+      ctx.fillRect(0, 0, WALL_WIDTH, WALL_HEIGHT);
+      
+      // Draw text outline
+      drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, false);
+      
+      // Draw all signatures with promises for loading
+      const loadImage = (url) => new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+      });
+
+      for (const sig of signatures) {
+        const img = await loadImage(sig.url);
+        ctx.save();
+        ctx.translate(sig.x + sig.w / 2, sig.y + sig.h / 2);
+        ctx.rotate(sig.rot);
+        ctx.drawImage(img, -sig.w / 2, -sig.h / 2, sig.w, sig.h);
+        ctx.restore();
+      }
+      
+      // Create download link
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.download = `signature-shards-${activeCampaign}.png`;
@@ -917,9 +895,9 @@ export default function WordCampaignBoard() {
   // Report issue
   const reportIssue = () => {
     const subject = `Issue Report: ${activeCampaign} Campaign`;
-    const body = `Please describe the issue you're experiencing with the ${activeCampaign} campaign:`;
+    const body = `Please describe the issue you're experiencing with the ${activeCampaign} campaign:\n\nUser ID: ${userId}`;
     
-    window.open(`mailto:support@signatureshards.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+    window.location.href = `mailto:support@signatureshards.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   // Color palette
@@ -968,7 +946,6 @@ export default function WordCampaignBoard() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {isAdminLoggedIn ? (  
-          // Admin View  
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">  
             <h2 className="text-xl font-bold mb-6">Campaign Management</h2>  
               
@@ -1020,6 +997,7 @@ export default function WordCampaignBoard() {
                         </button>  
                         <button  
                           onClick={() => {  
+                            if (!window.confirm(`Delete "${campaign}"? This will remove all signatures!`)) return;
                             const newCampaigns = campaigns.filter(c => c !== campaign);  
                             setCampaigns(newCampaigns);  
                             if (activeCampaign === campaign && newCampaigns.length > 0) {  
@@ -1039,11 +1017,8 @@ export default function WordCampaignBoard() {
             </div>  
           </div>  
         ) : (  
-          // User View  
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">  
-            {/* Left Column - Controls */}  
             <div className="lg:col-span-1 space-y-6">  
-              {/* Campaign Selection */}  
               <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
                 <h2 className="text-lg font-semibold text-gray-900 mb-3">Select Campaign</h2>  
                 <div className="space-y-2 max-h-60 overflow-y-auto">  
@@ -1065,7 +1040,6 @@ export default function WordCampaignBoard() {
                 </p>  
               </div>  
 
-              {/* Signature Creation */}  
               <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
                 <h2 className="text-lg font-semibold text-gray-900 mb-3">Create Your Signature</h2>  
                   
@@ -1092,7 +1066,6 @@ export default function WordCampaignBoard() {
                 </div>  
               </div>  
 
-              {/* Placement Options */}  
               <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
                 <h2 className="text-lg font-semibold text-gray-900 mb-3">Signature Options</h2>  
                   
@@ -1152,7 +1125,6 @@ export default function WordCampaignBoard() {
                 </div>  
               </div>  
 
-              {/* Action Buttons */}  
               <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
                 <h2 className="text-lg font-semibold text-gray-900 mb-3">Add Your Signature</h2>  
                   
@@ -1176,9 +1148,9 @@ export default function WordCampaignBoard() {
                     
                   <button  
                     onClick={handlePlaceSignature}  
-                    disabled={!userSignature || userHasSigned || userAction === 'placing'}  
+                    disabled={!userSignature || userHasSigned || userAction}  
                     className={`w-full py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${  
-                      !userSignature || userHasSigned || userAction === 'placing'  
+                      !userSignature || userHasSigned || userAction  
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'  
                         : 'bg-indigo-600 text-white hover:bg-indigo-700'  
                     }`}  
@@ -1200,9 +1172,9 @@ export default function WordCampaignBoard() {
                     
                   <button  
                     onClick={handleRemoveSignature}  
-                    disabled={!userHasSigned || userAction === 'erasing'}  
+                    disabled={!userHasSigned || userAction}  
                     className={`w-full py-2 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${  
-                      !userHasSigned || userAction === 'erasing'  
+                      !userHasSigned || userAction  
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'  
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'  
                     }`}  
@@ -1257,7 +1229,7 @@ export default function WordCampaignBoard() {
                   
                 {userMessage && (  
                   <div className={`mt-4 p-3 rounded-lg text-sm ${  
-                    userMessage.includes('error') || userMessage.includes('Failed') || userMessage.includes('crowded') || userMessage.includes('filled')  
+                    userMessage.toLowerCase().includes('fail') || userMessage.toLowerCase().includes('error') || userMessage.toLowerCase().includes('filled')  
                       ? 'bg-red-50 text-red-700 border border-red-200'   
                       : 'bg-green-50 text-green-700 border border-green-200'  
                   }`}>  
@@ -1267,7 +1239,6 @@ export default function WordCampaignBoard() {
               </div>  
             </div>  
 
-            {/* Right Column - Canvas */}  
             <div className="lg:col-span-2">  
               <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-5">  
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">  
@@ -1278,7 +1249,7 @@ export default function WordCampaignBoard() {
                   <div className="flex items-center space-x-3">  
                     <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5">  
                       <button   
-                        onClick={() => setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(1)))}  
+                        onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} // Min zoom 10%
                         className="text-gray-600 hover:text-indigo-700 p-1"  
                         aria-label="Zoom out"  
                       >  
@@ -1292,7 +1263,7 @@ export default function WordCampaignBoard() {
                       </span>  
                         
                       <button   
-                        onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(1)))}  
+                        onClick={() => setZoom(z => Math.min(3, z + 0.1))} // Max zoom 300%
                         className="text-gray-600 hover:text-indigo-700 p-1"  
                         aria-label="Zoom in"  
                       >  
@@ -1310,7 +1281,7 @@ export default function WordCampaignBoard() {
                   
                 <div className="relative bg-gray-100 rounded-lg overflow-hidden border border-gray-300">  
                   {isLoading ? (  
-                    <div className="h-96 flex items-center justify-center">  
+                    <div className="h-[60vh] flex items-center justify-center">  
                       <div className="text-center">  
                         <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">  
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>  
@@ -1322,22 +1293,20 @@ export default function WordCampaignBoard() {
                   ) : (  
                     <div   
                       ref={wallScrollRef}  
-                      className="h-96 overflow-auto relative"  
+                      className="h-[60vh] overflow-auto relative"  
                     >  
                       <div  
                         ref={wallInnerRef}  
-                        data-wall-inner  
                         className="relative mx-auto my-6"  
                         style={{  
-                          width: WALL_WIDTH + 'px',  
-                          height: WALL_HEIGHT + 'px',  
+                          width: `${WALL_WIDTH}px`,  
+                          height: `${WALL_HEIGHT}px`,  
                           backgroundSize: '24px 24px',  
                           backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',  
                           transform: `scale(${zoom})`,  
                           transformOrigin: 'top left'  
                         }}  
                       >  
-                        {/* Text outline preview */}  
                         <TextOutlineGenerator   
                           text={activeCampaign}   
                           width={WALL_WIDTH}  
@@ -1345,34 +1314,28 @@ export default function WordCampaignBoard() {
                           className="absolute inset-0 pointer-events-none"  
                         />  
                           
-                        {/* Signatures */}  
                         {signatures.map((sig) => (  
                           <div   
                             key={sig.id}   
                             data-sig-id={sig.id}  
-                            className="absolute select-none transition-transform duration-200 hover:z-10 hover:scale-105"  
+                            className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-110 group"  
                             style={{   
-                              left: sig.x,   
-                              top: sig.y,   
-                              width: sig.w,   
-                              height: sig.h,  
-                              transform: `rotate(${(sig.rot * 180 / Math.PI).toFixed(2)}deg)`,  
+                              left: `${sig.x}px`,   
+                              top: `${sig.y}px`,   
+                              width: `${sig.w}px`,   
+                              height: `${sig.h}px`,  
+                              transform: `rotate(${sig.rot * 180 / Math.PI}deg)`,  
                               transformOrigin: 'center'  
                             }}  
                             onClick={(e) => {  
                               e.stopPropagation();  
-                              setSignatures(prev => prev.map(s =>   
-                                s.id === sig.id   
-                                  ? { ...s, showName: !s.showName }   
-                                  : { ...s, showName: false }  
-                              ));  
+                              setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, showName: !s.showName } : s));  
                             }}  
                           >  
-                            {/* Name tooltip */}  
                             {sig.name && (  
-                              <div className={`absolute -top-7 left-1/2 transform -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity ${  
+                              <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${  
                                 sig.showName ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'  
-                              }`}>  
+                              } z-50`}>  
                                 {sig.name}  
                               </div>  
                             )}  
@@ -1380,7 +1343,7 @@ export default function WordCampaignBoard() {
                             <img   
                               src={sig.url}   
                               alt="signature"   
-                              className="w-full h-full"  
+                              className="w-full h-full object-contain"  
                               draggable={false}  
                             />  
                           </div>  
@@ -1396,7 +1359,6 @@ export default function WordCampaignBoard() {
                 </div>  
               </div>  
                 
-              {/* Campaign Info */}  
               <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
                 <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>  
                 <p className="text-sm text-gray-600">  
@@ -1405,22 +1367,13 @@ export default function WordCampaignBoard() {
                 </p>  
                   
                 <div className="mt-4 flex flex-wrap gap-2">  
-                  <button 
-                    onClick={shareCampaign}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors"  
-                  >  
+                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
                     Share Campaign  
                   </button>  
-                  <button 
-                    onClick={downloadImage}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors"  
-                  >  
+                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
                     Download Image  
                   </button>  
-                  <button 
-                    onClick={reportIssue}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors"  
-                  >  
+                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
                     Report Issue  
                   </button>  
                 </div>  
@@ -1430,72 +1383,58 @@ export default function WordCampaignBoard() {
         )}
       </main>
 
-      {/* Community Guidelines Modal */}
       <CommunityGuidelinesModal
-        isOpen={showGuidelines}  
-        onClose={() => setShowGuidelines(false)}  
-        onAccept={() => {  
-          setGuidelinesAccepted(true);  
-          setShowGuidelines(false);  
+        isOpen={showGuidelines}
+        onClose={() => setShowGuidelines(false)}
+        onAccept={() => {
+          setGuidelinesAccepted(true);
+          setShowGuidelines(false);
         }}
       />
 
-      {/* Admin Login Modal */}
       <AdminLoginModal
         isOpen={showAdminLogin}
         onClose={() => setShowAdminLogin(false)}
-        onLogin={() => {
-          setIsAdminLoggedIn(true);
-          setIsAdmin(true);
-        }}
+        onLogin={() => setIsAdminLoggedIn(true)}
       />
 
-     // ... (all the previous code remains the same until the style section at the end)
-
-// Remove the entire style jsx section and replace it with this:
-
-<style>{`
-  [data-flash="1"] {  
-    animation: flash 1.5s ease-in-out;  
-  }  
-    
-  @keyframes flash {  
-    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }  
-    50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }  
-    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }  
-  }  
-    
-  /* Custom range slider */  
-  .word-campaign-board input[type="range"] {  
-    -webkit-appearance: none;  
-    height: 6px;  
-    background: #e5e7eb;  
-    border-radius: 3px;  
-    outline: none;  
-  }  
-    
-  .word-campaign-board input[type="range"]::-webkit-slider-thumb {  
-    -webkit-appearance: none;  
-    appearance: none;  
-    width: 18px;  
-    height: 18px;  
-    border-radius: 50%;  
-    background: #4f46e5;  
-    cursor: pointer;  
-    border: 2px solid white;  
-    box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);  
-  }  
-    
-  .word-campaign-board input[type="range"]::-moz-range-thumb {  
-    width: 18px;  
-    height: 18px;  
-    border-radius: 50%;  
-    background: #4f46e5;  
-    cursor: pointer;  
-    border: 2px solid white;  
-    box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);  
-  }  
-`}</style>
+      <style>{`
+        [data-flash="1"] {
+          animation: flash 1.5s ease-in-out;
+        }
+        @keyframes flash {
+          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        input[type="range"] {
+          -webkit-appearance: none;
+          height: 6px;
+          background: #e5e7eb;
+          border-radius: 3px;
+          outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+      `}</style>
     </div>
   );
 }
