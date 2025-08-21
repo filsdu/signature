@@ -1885,45 +1885,51 @@ export default function CampaignBoard() {
         />
       </main>
 
-      <style jsx>{`
-        @keyframes pulse {
-          0% { opacity: 0.7; }
-          50% { opacity: 0.9; }
-          100% { opacity: 0.7; }
-        }
-        
-        [data-flash="1"] {
-          animation: flash 1.5s ease-in-out;
-        }
-        
-        @keyframes flash {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
-          50% { box-shadow: 0 0 0 8px rgba(59,130,246,0.3); }
-        }
-        
-        .rounded-rect {
-          border-radius: 16px;
-        }
-        
-        input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 16px;
-          height: 16px;
-          background: #4f46e5;
-          border-radius: 50%;
-          cursor: pointer;
-        }
-        
-        input[type="range"]::-moz-range-thumb {
-          width: 16px;
-          height: 16px;
-          background: #4f46e5;
-          border-radius: 50%;
-          cursor: pointer;
-          border: none;
-        }
-      `}</style>
+    <style jsx>{`
+  @keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 0.9; }
+    100% { opacity: 0.7; }
+  }
+  
+  [data-flash="1"] {
+    animation: flash 1.5s ease-in-out;
+  }
+  
+  @keyframes flash {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+    50% { box-shadow: 0 0 0 8px rgba(59,130,246,0.3); }
+  }
+  
+  .rounded-rect {
+    border-radius: 16px;
+  }
+  
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #4f46e5;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #4f46e5;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+  
+  .wall-background {
+    background-size: 24px 24px;
+    background-image: radial-gradient(circle, #d4d4d8 1px, transparent 1px);
+    background-repeat: repeat;
+  }
+`}</style>
     </div>
   );
 }
