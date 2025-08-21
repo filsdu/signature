@@ -62,108 +62,255 @@ export default function Home() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
-      <section className="mb-10">
-        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Welcome to Signature Shards</h1>
-        <p className="text-neutral-600 mt-2">
-          Draw signatures, post confessions, and create photo walls. Items can “kiss” but never overlap. Pick a board and add your mark.
-        </p>
-      </section>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+      <div className="max-w-6xl mx-auto px-4 py-10">
+        {/* Hero Section */}
+        <section className="mb-12 text-center">
+          <h1 className="text-4xl md:text-5xl font-bold text-indigo-800 mb-4">
+            Signature Shards
+          </h1>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Create beautiful collaborative artworks with signatures, confessions, photos, and word campaigns. 
+            Each contribution becomes part of a larger tapestry.
+          </p>
+        </section>
 
-      <section className="mb-10">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:p-6 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <div className="text-sm text-neutral-500">Account</div>
-              {user ? (
-                <div className="text-sm">
-                  Signed in as <span className="font-medium">{user.email}</span>
+        {/* Authentication Section */}
+        <section className="mb-12">
+          <div className="bg-white rounded-2xl shadow-lg p-6 max-w-md mx-auto">
+            <h2 className="text-xl font-semibold mb-4 text-center">Your Account</h2>
+            
+            {user ? (
+              <div className="text-center">
+                <div className="flex justify-center mb-4">
+                  <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <span className="text-xl font-semibold text-indigo-600">
+                      {user.email.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="text-sm">Sign in to place and edit your items.</div>
-              )}
-            </div>
-
-            {!user ? (
-              <form onSubmit={signIn} className="flex items-center gap-2">
-                <input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e)=>setEmail(e.target.value)}
-                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm w-64"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={sending}
-                  className={`px-3 py-2 rounded-xl ${sending ? 'bg-neutral-300 text-neutral-600' : 'bg-black text-white hover:opacity-90'}`}
-                >
-                  {sending ? "Sending..." : "Send magic link"}
-                </button>
-              </form>
+                <p className="text-gray-600 mb-4">Signed in as <span className="font-medium">{user.email}</span></p>
+                <div className="flex flex-col gap-2">
+                  <button 
+                    onClick={signOut} 
+                    className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                  <Link 
+                    to="/signatures" 
+                    className="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors text-center"
+                  >
+                    Enter Boards
+                  </Link>
+                </div>
+              </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <button onClick={signOut} className="px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-sm">
-                  Sign out
-                </button>
-                <Link to="/signatures" className="px-3 py-2 rounded-xl bg-black text-white text-sm hover:opacity-90">Enter boards</Link>
+              <div>
+                <p className="text-gray-600 mb-4 text-center">Sign in to create and manage your contributions</p>
+                <form onSubmit={signIn} className="space-y-4">
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                      Email address
+                    </label>
+                    <input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={sending}
+                    className={`w-full px-4 py-2 rounded-xl ${sending ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'} text-white transition-colors`}
+                  >
+                    {sending ? "Sending..." : "Send Magic Link"}
+                  </button>
+                </form>
+                
+                {sent && (
+                  <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">
+                    Magic link sent! Check your email and click the link to finish signing in.
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {message && (
+              <div className="mt-4 p-3 bg-yellow-100 text-yellow-700 rounded-lg text-sm">
+                {message}
               </div>
             )}
           </div>
+        </section>
 
-          {sent && !user && (
-            <div className="mt-3 text-xs text-green-700">
-              Magic link sent! Check your email and click the link to finish signing in.
+        {/* Boards Section */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold text-center mb-8">Choose a Board</h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Signatures */}
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
+              <div className="h-40 bg-gradient-to-r from-blue-400 to-blue-600 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </div>
+              <div className="p-5">
+                <h3 className="text-lg font-semibold mb-2">Signatures</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Draw your signature and place it on a collective artwork without overlaps.
+                </p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => go('/signatures')} 
+                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
+                  >
+                    Create
+                  </button>
+                  <Link 
+                    to="/signatures" 
+                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
             </div>
-          )}
-          {message && <div className="mt-3 text-xs text-neutral-700">{message}</div>}
-        </div>
-      </section>
 
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Pick a board</h2>
-        <div className="grid md:grid-cols-3 gap-4">
-          {/* Signatures */}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col">
-            <div className="text-sm text-neutral-500 mb-2">Board</div>
-            <h3 className="text-lg font-medium mb-2">Signatures</h3>
-            <p className="text-sm text-neutral-600 mb-4">
-              Draw your signature and place it on a giant wall. They can touch, but never overlap.
-            </p>
-            <div className="mt-auto flex gap-2">
-              <button onClick={()=>go('/signatures')} className="px-3 py-2 rounded-xl bg-black text-white text-sm hover:opacity-90">Open</button>
-              <Link to="/signatures" className="px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-sm">View</Link>
+            {/* Confessions */}
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
+              <div className="h-40 bg-gradient-to-r from-purple-400 to-purple-600 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+              </div>
+              <div className="p-5">
+                <h3 className="text-lg font-semibold mb-2">Confessions</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Share thoughts in customizable shapes that touch but don't overlap.
+                </p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => go('/confessions')} 
+                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
+                  >
+                    Create
+                  </button>
+                  <Link 
+                    to="/confessions" 
+                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Photos */}
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
+              <div className="h-40 bg-gradient-to-r from-pink-400 to-pink-600 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="p-5">
+                <h3 className="text-lg font-semibold mb-2">Photos</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Upload images to create a mosaic where photos touch but never overlap.
+                </p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => go('/photos')} 
+                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
+                  >
+                    Create
+                  </button>
+                  <Link 
+                    to="/photos" 
+                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Word Campaigns */}
+            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
+              <div className="h-40 bg-gradient-to-r from-green-400 to-green-600 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                </svg>
+              </div>
+              <div className="p-5">
+                <h3 className="text-lg font-semibold mb-2">Word Campaigns</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Contribute to collective word art where each signature fills the outline of a message.
+                </p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => go('/word-campaigns')} 
+                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
+                  >
+                    Create
+                  </button>
+                  <Link 
+                    to="/word-campaigns" 
+                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
+        </section>
 
-          {/* Confessions */}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col">
-            <div className="text-sm text-neutral-500 mb-2">Board</div>
-            <h3 className="text-lg font-medium mb-2">Confessions</h3>
-            <p className="text-sm text-neutral-600 mb-4">
-              Write a short text in a circle, rounded, or square shape. Place it with auto or manual mode.
-            </p>
-            <div className="mt-auto flex gap-2">
-              <button onClick={()=>go('/confessions')} className="px-3 py-2 rounded-xl bg-black text-white text-sm hover:opacity-90">Open</button>
-              <Link to="/confessions" className="px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-sm">View</Link>
+        {/* Features Section */}
+        <section className="bg-white rounded-2xl shadow-lg p-8 mb-12">
+          <h2 className="text-2xl font-semibold text-center mb-8">How It Works</h2>
+          <div className="grid md:grid-cols-3 gap-8">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Create</h3>
+              <p className="text-gray-600">Sign in and create your unique contribution - a signature, confession, photo, or word art.</p>
+            </div>
+            
+            <div className="text-center">
+              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Place</h3>
+              <p className="text-gray-600">Position your creation on the collective canvas where pieces touch but never overlap.</p>
+            </div>
+            
+            <div className="text-center">
+              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 极速赛车开奖结果 极速赛车开奖官网 极速赛车开奖直播 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905a3.61 3.61 0 01-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Share</h3>
+              <p className="text-gray-600">Watch as thousands of contributions come together to form beautiful collaborative art.</p>
             </div>
           </div>
+        </section>
 
-          {/* Photos */}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col">
-            <div className="text-sm text-neutral-500 mb-2">Board</div>
-            <h3 className="text-lg font-medium mb-2">Photos (Cats/Dogs/…)</h3>
-            <p className="text-sm text-neutral-600 mb-4">
-              Upload an image and place it. No rotation. Items “kiss” in a neat grid without overlap.
-            </p>
-            <div className="mt-auto flex gap-2">
-              <button onClick={()=>go('/photos')} className="px-3 py-2 rounded-xl bg-black text-white text-sm hover:opacity-90">Open</button>
-              <Link to="/photos" className="px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-sm">View</Link>
-            </div>
-          </div>
-        </div>
-      </section>
+        {/* Footer */}
+        <footer className="text-center text-gray-500 text-sm">
+          <p>© {new Date().getFullYear()} Signature Shards. All rights reserved.</p>
+        </footer>
+      </div>
     </div>
   );
 }
