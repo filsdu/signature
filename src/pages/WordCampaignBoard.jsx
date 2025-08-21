@@ -7,12 +7,12 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Constants
-const WALL_WIDTH = 10000; // Increased for "infinite" feel
-const WALL_HEIGHT = 10000;
-const MIN_SIGNATURE_WIDTH = 50; // Smaller for denser placement
-const MAX_SIGNATURE_WIDTH = 120;
-const MIN_SIGNATURE_HEIGHT = 25;
-const MAX_SIGNATURE_HEIGHT = 60;
+const WALL_WIDTH = 5000;
+const WALL_HEIGHT = 3000;
+const MIN_SIGNATURE_WIDTH = 70;
+const MAX_SIGNATURE_WIDTH = 100;
+const MIN_SIGNATURE_HEIGHT = 35;
+const MAX_SIGNATURE_HEIGHT = 50;
 
 // SignaturePad Component
 const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200 }) => {
@@ -72,6 +72,7 @@ const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200 }
     const pos = getPosition(e);
     const ctx = canvasRef.current.getContext('2d');
     
+    // Calculate distance from last point to determine line width
     const dist = Math.sqrt(Math.pow(pos.x - lastPoint.x, 2) + Math.pow(pos.y - lastPoint.y, 2));
     ctx.lineWidth = Math.max(2, Math.min(5, 10 - dist/10));
     
@@ -116,15 +117,15 @@ const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200 }
     
     if (!hasInk) return null;
     
-    const trimW = Math.max(1, maxX - minX + 2); // Minimal padding for denser placement
-    const trimH = Math.max(1, maxY - minY + 2);
+    const trimW = Math.max(1, maxX - minX + 4); // Reduced padding for tighter bounds
+    const trimH = Math.max(1, maxY - minY + 4);
     
     const out = document.createElement('canvas');
     out.width = trimW;
     out.height = trimH;
     
     const octx = out.getContext('2d');
-    octx.drawImage(canvas, minX-1, minY-1, trimW, trimH, 0, 0, trimW, trimH);
+    octx.drawImage(canvas, minX-2, minY-2, trimW, trimH, 0, 0, trimW, trimH);
     
     return out.toDataURL('image/png');
   };
@@ -178,41 +179,45 @@ const drawTextOnCanvas = (ctx, text, width, height, isMask = false) => {
     ctx.fillStyle = "#000";
   } else {
     ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 8; // Thicker outline for better visibility
   }
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  const words = text.toUpperCase().trim().split(/\s+/);
+  // Split into words, place each word on its own row
+  const words = text.trim().toUpperCase().split(/\s+/);
   const wordCount = words.length;
   if (wordCount === 0) return;
 
-  // Each word on its own row for multi-word campaigns
   const rows = wordCount;
-  const cols = 1;
-  const cellWidth = width;
+  const cols = 1; // One word per row
+  const cellWidth = width / cols;
   const cellHeight = height / rows;
 
-  // Determine maximum font size per word
+  // Determine maximum font size based on narrowest cell
+  let fontSize = Math.min(cellWidth, cellHeight) * 1.95; // Larger text
   const fontFamily = "'Arial Black', Gadget, sans-serif";
-  let minFontSize = Infinity;
+  ctx.font = `bold ${fontSize}px ${fontFamily}`;
+
+  // Adjust for widest word
+  let maxTextWidth = 0;
   for (let word of words) {
-    let fontSize = Math.min(cellWidth, cellHeight) * 1.95;
+    maxTextWidth = Math.max(maxTextWidth, ctx.measureText(word).width);
+  }
+  while (maxTextWidth > cellWidth * 0.98 && fontSize > 10) {
+    fontSize -= 1;
     ctx.font = `bold ${fontSize}px ${fontFamily}`;
-    while (ctx.measureText(word).width > cellWidth * 0.98 && fontSize > 10) {
-      fontSize -= 1;
-      ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    maxTextWidth = 0;
+    for (let word of words) {
+      maxTextWidth = Math.max(maxTextWidth, ctx.measureText(word).width);
     }
-    minFontSize = Math.min(minFontSize, fontSize);
   }
 
-  // Use consistent font size across words
-  ctx.font = `bold ${minFontSize}px ${fontFamily}`;
-
   // Draw each word on its row
-  words.forEach((word, index) => {
+  words.forEach((word, row) => {
     const x = cellWidth / 2;
-    const y = index * cellHeight + cellHeight / 2;
+    const y = row * cellHeight + cellHeight / 2;
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
     if (isMask) {
       ctx.fillText(word, x, y);
     } else {
@@ -290,92 +295,9 @@ const CommunityGuidelinesModal = ({ isOpen, onClose, onAccept }) => {
   );
 };
 
-// Approval Modal for Admin
-const ApprovalModal = ({ isOpen, onClose, pendingSignatures, onApprove, onReject }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">Pending Signature Approvals</h2>
-        {pendingSignatures.length === 0 ? (
-          <p className="text-sm text-gray-600">No pending signatures.</p>
-        ) : (
-          pendingSignatures.map(sig => (
-            <div key={sig.id} className="border-b py-4 last:border-b-0">
-              <div className="flex items-center gap-4">
-                <img src={sig.url} alt="Pending signature" className="w-20 h-10 object-contain" />
-                <div>
-                  <p className="text-sm">Campaign: {sig.campaign}</p>
-                  <p className="text-sm">Name: {sig.name || 'Anonymous'}</p>
-                </div>
-                <div className="ml-auto flex gap-2">
-                  <button onClick={() => onApprove(sig.id)} className="px-3 py-1 bg-green-600 text-white rounded">Approve</button>
-                  <button onClick={() => onReject(sig.id)} className="px-3 py-1 bg-red-600 text-white rounded">Reject</button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-        <button onClick={onClose} className="mt-4 px-4 py-2 bg-gray-200 rounded w-full">Close</button>
-      </div>
-    </div>
-  );
-};
-
-// Time Lapse Modal
-const TimeLapseModal = ({ isOpen, onClose, signatures }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const animationRef = useRef(null);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    if (!isOpen || !isPlaying) return;
-
-    const sortedSigs = [...signatures].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    const total = sortedSigs.length;
-    let index = 0;
-
-    const animate = () => {
-      if (index < total) {
-        // Simulate adding signature
-        // In real, you'd update a canvas or state to show progressive addition
-        setProgress((index + 1) / total * 100);
-        index++;
-        animationRef.current = setTimeout(animate, 200); // 200ms per signature
-      } else {
-        setIsPlaying(false);
-      }
-    };
-
-    animate();
-
-    return () => clearTimeout(animationRef.current);
-  }, [isOpen, isPlaying, signatures]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
-        <h2 className="text-xl font-bold mb-4">Time Lapse</h2>
-        <div className="bg-gray-200 rounded-full h-2.5 mb-4">
-          <div className="bg-indigo-600 h-2.5 rounded-full" style={{ width: `${progress}%` }}></div>
-        </div>
-        <button 
-          onClick={() => setIsPlaying(!isPlaying)} 
-          className="px-4 py-2 bg-indigo-600 text-white rounded w-full mb-2"
-        >
-          {isPlaying ? 'Pause' : 'Play'}
-        </button>
-        <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded w-full">Close</button>
-      </div>
-    </div>
-  );
-};
-
 // Placement Engine
 const PlacementEngine = {
+  // Calculate rotated bounds
   rotatedBounds: (w, h, rotRad) => {
     const cos = Math.cos(rotRad);
     const sin = Math.sin(rotRad);
@@ -384,15 +306,17 @@ const PlacementEngine = {
     return { rw, rh };
   },
 
+  // Check if two rectangles overlap (with buffer for safety)
   overlaps: (a, b) => {
-    const buffer = 2; // Reduced for denser placement
+    const buffer = 2; // Reduced buffer for denser placement
     return a.x < b.x + b.w + buffer &&
            a.x + a.w + buffer > b.x &&  
            a.y < b.y + b.h + buffer &&  
            a.y + a.h + buffer > b.y;
   },
 
-  createSpatialGrid: (width, height, cellSize = 50) => {
+  // Create a grid for spatial partitioning
+  createSpatialGrid: (width, height, cellSize = 80) => { // Smaller cell for better performance
     const grid = {};
     
     const getCellKey = (x, y) => `${Math.floor(x/cellSize)},${Math.floor(y/cellSize)}`;
@@ -420,7 +344,7 @@ const PlacementEngine = {
         const endY = Math.floor((y + h) / cellSize);  
         
         const items = new Set();  
-        for (let i = startX - 1; i <= endX + 1; i++) { 
+        for (let i = startX - 1; i <= endX + 1; i++) { // Expand search for safety
           for (let j = startY - 1; j <= endY + 1; j++) {  
             const key = `${i},${j}`;  
             if (grid[key]) {  
@@ -433,7 +357,8 @@ const PlacementEngine = {
     };
   },
 
-  findPlacementInMask: ({ maskCanvas, imgW, imgH, rotRad, existing, maxTries = 10000 }) => {
+  // Find placement inside text mask
+  findPlacementInMask: ({ maskCanvas, imgW, imgH, rotRad, existing, maxTries = 10000 }) => { // Increased tries for denser placement
     const { rw, rh } = PlacementEngine.rotatedBounds(imgW, imgH, rotRad);
     const w = Math.ceil(rw);
     const h = Math.ceil(rh);
@@ -441,14 +366,16 @@ const PlacementEngine = {
     const ctx = maskCanvas.getContext("2d");
     const mask = ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
     
+    // Create spatial grid for existing items
     const grid = PlacementEngine.createSpatialGrid(maskCanvas.width, maskCanvas.height);
     existing.forEach(item => {
       const bounds = PlacementEngine.rotatedBounds(item.w, item.h, item.rot);
       grid.add(item, item.x, item.y, bounds.rw, bounds.rh);
     });
 
+    // Check if a rectangle is inside the text mask with dense sampling
     const rectIsInsideMask = (x, y) => {
-      const samples = 36; // 6x6 for even denser checking
+      const samples = 36; // 6x6 grid for even better coverage
       let insideCount = 0;
       
       for (let i = 0; i < samples; i++) {
@@ -459,14 +386,15 @@ const PlacementEngine = {
         const py = Math.floor(y + sampleY * (h / 5));  
         
         if (px >= 0 && px < maskCanvas.width && py >= 0 && py < maskCanvas.height) {  
-          const idx = (py * maskCanvas.width + px) * 4 + 3;  
+          const idx = (py * maskCanvas.width + px) * 4 + 3; // alpha channel  
           if (mask[idx] > 200) insideCount++;  
         }
       }
       
-      return insideCount >= 32; // Strict: 32/36 points inside
+      return insideCount >= 33; // Strict: at least 33/36 points inside to ensure no overflow
     };
 
+    // Try to find a valid position
     for (let i = 0; i < maxTries; i++) {
       const x = Math.floor(Math.random() * Math.max(1, maskCanvas.width - w));
       const y = Math.floor(Math.random() * Math.max(1, maskCanvas.height - h));
@@ -475,6 +403,7 @@ const PlacementEngine = {
       
       const bb = { x, y, w, h };
       
+      // Check only nearby items using spatial grid
       const nearbyItems = grid.getNearby(x, y, w, h);
       const collides = nearbyItems.some(e => {
         const eBounds = PlacementEngine.rotatedBounds(e.w, e.h, e.rot);  
@@ -489,11 +418,11 @@ const PlacementEngine = {
       if (!collides) return { x, y };
     }
     
-    return null;
+    return null; // No valid position found
   }
 };
 
-// Admin Login Modal (unchanged)
+// Admin Login Modal
 const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
   const [password, setPassword] = useState("");
   
@@ -549,12 +478,97 @@ const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
   );
 };
 
+// Time Lapse Modal Component
+const TimeLapseModal = ({ isOpen, onClose, signatures, activeCampaign }) => {
+  const canvasRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const animationRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    canvas.width = WALL_WIDTH;
+    canvas.height = WALL_HEIGHT;
+    const ctx = canvas.getContext('2d');
+
+    // Sort signatures by creation time (assume created_at is in the data)
+    const sortedSignatures = [...signatures].sort((a, b) => a.created_at - b.created_at);
+
+    let frame = 0;
+    const playAnimation = () => {
+      if (frame >= sortedSignatures.length) {
+        setIsPlaying(false);
+        return;
+      }
+
+      // Clear canvas
+      ctx.clearRect(0, 0, WALL_WIDTH, WALL_HEIGHT);
+
+      // Draw text outline
+      drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, false);
+
+      // Draw signatures up to current frame
+      for (let i = 0; i <= frame; i++) {
+        const sig = sortedSignatures[i];
+        const img = new Image();
+        img.src = sig.url;
+        ctx.save();
+        ctx.translate(sig.x + sig.w / 2, sig.y + sig.h / 2);
+        ctx.rotate(sig.rot);
+        ctx.drawImage(img, -sig.w / 2, -sig.h / 2, sig.w, sig.h);
+        ctx.restore();
+      }
+
+      frame++;
+      animationRef.current = requestAnimationFrame(playAnimation);
+    };
+
+    if (isPlaying) {
+      playAnimation();
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isOpen, isPlaying, signatures, activeCampaign]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-4xl w-full p-6">
+        <h2 className="text-xl font-bold mb-4">Time Lapse: {activeCampaign}</h2>
+        
+        <canvas ref={canvasRef} className="w-full h-96 border border-gray-300" />
+        
+        <div className="flex justify-end gap-3 mt-4">
+          <button 
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+          >
+            {isPlaying ? 'Pause' : 'Play'}
+          </button>
+          <button 
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-zinc-200 hover:bg-zinc-300"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Main Word Campaign Board Component
 export default function WordCampaignBoard() {
+  // State management
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [signatures, setSignatures] = useState([]);
-  const [pendingSignatures, setPendingSignatures] = useState([]); // For approval queue
   const [userSignature, setUserSignature] = useState(null);
   const [penColor, setPenColor] = useState("#111827");
   const [signatureSize, setSignatureSize] = useState(0.5);
@@ -570,22 +584,25 @@ export default function WordCampaignBoard() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [newCampaignText, setNewCampaignText] = useState("");
-  const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showTimeLapse, setShowTimeLapse] = useState(false);
-  const [completionPercentage, setCompletionPercentage] = useState(0);
+  const [moderationQueue, setModerationQueue] = useState([]); // For admin moderation
+  const [fillPercentage, setFillPercentage] = useState(0); // Campaign fill stats
 
+  // Refs
   const wallScrollRef = useRef(null);
   const wallInnerRef = useRef(null);
 
+  // User session ID
   const userId = useMemo(() => {
-    let id = localStorage.getItem('signatureShardsUserId');
+    let id = localStorage.getItem('signatureShardsUserId'); // Changed to localStorage for persistence
     if (!id) {
-      id = crypto.randomUUID();
+      id = crypto.randomUUID(); // Better unique ID
       localStorage.setItem('signatureShardsUserId', id);
     }
     return id;
   }, []);
 
+  // Check if user has already placed a signature
   const userHasSigned = useMemo(() => 
     signatures.some(sig => sig.owner === userId),
     [signatures, userId]
@@ -595,20 +612,27 @@ export default function WordCampaignBoard() {
   useEffect(() => {
     const loadCampaigns = async () => {
       try {
-        const { data, error } = await supabase.from('campaigns').select('name').order('created_at');
-        if (error) throw error;
-        const campaignNames = data.map(c => c.name);
-        setCampaigns(campaignNames.length > 0 ? campaignNames : ["FREEDOM", "EQUALITY", "JUSTICE"]);
-        setActiveCampaign(campaignNames[0] || "FREEDOM");
+        const savedCampaigns = JSON.parse(localStorage.getItem('signatureShardsCampaigns') || '[]');  
+        
+        if (savedCampaigns.length > 0) {  
+          setCampaigns(savedCampaigns);  
+          setActiveCampaign(savedCampaigns[0]);  
+        } else {  
+          const defaultCampaigns = ["FREEDOM", "EQUALITY", "JUSTICE"];  
+          setCampaigns(defaultCampaigns);  
+          setActiveCampaign(defaultCampaigns[0]);  
+          localStorage.setItem('signatureShardsCampaigns', JSON.stringify(defaultCampaigns));  
+        }
       } catch (err) {
         console.error("Error loading campaigns:", err);
+        setUserMessage("Failed to load campaigns. Please refresh.");
       }
     };
     
     loadCampaigns();
   }, []);
 
-  // Generate text mask and calculate completion
+  // Generate text mask
   useEffect(() => {
     if (!activeCampaign) return;
     
@@ -618,26 +642,9 @@ export default function WordCampaignBoard() {
     const ctx = canvas.getContext("2d");
     drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, true);
     setMaskCanvas(canvas);
+  }, [activeCampaign]);
 
-    // Calculate completion percentage
-    const calculateCompletion = () => {
-      const maskData = ctx.getImageData(0, 0, WALL_WIDTH, WALL_HEIGHT).data;
-      let totalPixels = 0;
-      let coveredPixels = 0;
-
-      for (let i = 3; i < maskData.length; i += 4) {
-        if (maskData[i] > 200) totalPixels++;
-      }
-
-      // Simulate coverage calculation (in real, render signatures on a temp canvas and count overlap)
-      coveredPixels = signatures.length * 1000; // Placeholder
-      setCompletionPercentage(Math.min(100, (coveredPixels / totalPixels * 100).toFixed(1)));
-    };
-
-    calculateCompletion();
-  }, [activeCampaign, signatures]);
-
-  // Load signatures and pending for admin
+  // Load signatures for active campaign
   useEffect(() => {
     if (!activeCampaign) return;
     
@@ -648,7 +655,6 @@ export default function WordCampaignBoard() {
           .from("word_signatures")  
           .select("*")  
           .eq("campaign", activeCampaign)  
-          .eq("approved", true)  
           .order("created_at", { ascending: true });  
         
         if (error) throw error;
@@ -663,20 +669,15 @@ export default function WordCampaignBoard() {
           rot: (row.rot_deg || 0) * Math.PI / 180,  
           owner: row.owner,  
           name: row.name || '',  
-          showName: false,
-          created_at: row.created_at  
+          showName: false  ,
+          created_at: row.created_at // Add for time lapse
         }));  
         setSignatures(formattedSignatures);  
 
-        if (isAdminLoggedIn) {
-          const { data: pending, error: pendingError } = await supabase  
-            .from("word_signatures")  
-            .select("*")  
-            .eq("campaign", activeCampaign)  
-            .is("approved", false);  
-          if (pendingError) throw pendingError;
-          setPendingSignatures(pending);
-        }
+        // Calculate fill percentage (approximate)
+        const totalArea = WALL_WIDTH * WALL_HEIGHT;
+        const sigArea = formattedSignatures.reduce((acc, sig) => acc + sig.w * sig.h, 0);
+        setFillPercentage(Math.min(100, Math.round((sigArea / totalArea) * 100 * 2))); // *2 for density estimate
       } catch (err) {
         console.error("Error loading signatures:", err);  
         setUserMessage("Unable to load signatures. Please refresh the page.");  
@@ -687,6 +688,7 @@ export default function WordCampaignBoard() {
     
     loadSignatures();
     
+    // Set up realtime subscription
     const channel = supabase
       .channel(`word_signatures:${activeCampaign}`)
       .on("postgres_changes", 
@@ -709,35 +711,37 @@ export default function WordCampaignBoard() {
               owner: payload.new.owner,  
               name: payload.new.name || '',  
               showName: false,
-              created_at: payload.new.created_at,
-              approved: payload.new.approved  
+              created_at: payload.new.created_at
             };  
-            if (payload.new.approved) {
-              setSignatures(prev => [...prev, newSig]);
-            } else if (isAdminLoggedIn) {
-              setPendingSignatures(prev => [...prev, newSig]);
-            }
+            setSignatures(prev => [...prev, newSig]);  
           } else if (payload.eventType === "DELETE") {  
             setSignatures(prev => prev.filter(p => p.id !== payload.old.id));  
-            setPendingSignatures(prev => prev.filter(p => p.id !== payload.old.id));
           } else if (payload.eventType === "UPDATE") {  
-            const updatedSig = {  
-              ...payload.new,  
-              rot: (payload.new.rot_deg || 0) * Math.PI / 180,  
-              showName: false  
-            };  
-            setSignatures(prev => prev.map(p => p.id === payload.new.id ? updatedSig : p));  
-            setPendingSignatures(prev => prev.map(p => p.id === payload.new.id ? updatedSig : p));  
+            setSignatures(prev => prev.map(p =>   
+              p.id === payload.new.id ? {  
+                ...p,  
+                x: payload.new.x,  
+                y: payload.new.y,  
+                w: payload.new.w,  
+                h: payload.new.h,  
+                rot: (payload.new.rot_deg || 0) * Math.PI / 180,  
+                name: payload.new.name || '',
+                created_at: payload.new.created_at  
+              } : p  
+            ));  
           }  
         }
       )
-      .subscribe();
-
+      .subscribe((status, err) => {
+        if (err) console.error("Subscription error:", err);
+      });
+    
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeCampaign, isAdminLoggedIn]);
+  }, [activeCampaign]);
 
+  // Handle signature placement
   const handlePlaceSignature = async () => {
     if (!userSignature) {
       setUserMessage("Please create a signature first");
@@ -772,6 +776,7 @@ export default function WordCampaignBoard() {
             imgH: h,  
             rotRad,  
             existing: signatures,  
+            maxTries: 5000  
           });
     
           if (!placement) {  
@@ -788,8 +793,7 @@ export default function WordCampaignBoard() {
             y: Math.round(placement.y),  
             w, h,  
             rot_deg: rotDeg,  
-            name: displayName.trim().slice(0, 20),  
-            approved: false // Pending approval
+            name: displayName.trim().slice(0, 20)  
           };
     
           const { error } = await supabase  
@@ -798,14 +802,19 @@ export default function WordCampaignBoard() {
     
           if (error) throw error;
           
-          setUserMessage("Your signature has been submitted for approval!");  
+          setUserMessage("Your signature has been added to the campaign!");  
           setUserSignature(null);  
+          setTimeout(() => locateMySignature(), 500);  
         } catch (err) {  
           console.error("Placement error:", err);  
           setUserMessage("Something went wrong during placement. Please try again.");  
         } finally {  
           setUserAction(null);  
         }
+      };
+      img.onerror = () => {
+        setUserMessage("Failed to load signature image.");
+        setUserAction(null);
       };
       img.src = userSignature;
     } catch (err) {
@@ -815,226 +824,773 @@ export default function WordCampaignBoard() {
     }
   };
 
+  // Handle signature removal with confirmation
   const handleRemoveSignature = async () => {
-    const userSig = signatures.find(sig => sig.owner === userId);
-    if (!userSig) return;
-
     if (!window.confirm("Are you sure you want to remove your signature?")) return;
 
+    const userSig = signatures.find(sig => sig.owner === userId);
+    if (!userSig) {
+      setUserMessage("You haven't placed a signature in this campaign yet.");
+      return;
+    }
+    
+    setUserAction('erasing');
+    setUserMessage("Removing your signature...");
+    
     try {
       const { error } = await supabase
-        .from("word_signatures")
-        .delete()
-        .eq("id", userSig.id);
+        .from("word_signatures")  
+        .delete()  
+        .eq("id", userSig.id)
+        .eq("owner", userId); // Extra check for security
+      
       if (error) throw error;
-      setUserMessage("Signature removed successfully.");
+      
+      setSignatures(prev => prev.filter(sig => sig.id !== userSig.id)); // Manually remove from state for immediate update
+      
+      setUserMessage("Your signature has been removed.");  
     } catch (err) {
-      setUserMessage("Failed to remove signature.");
+      console.error("Error removing signature:", err);  
+      setUserMessage("Failed to remove your signature. Please try again.");  
+    } finally {
+      setUserAction(null);
     }
   };
 
+  // Locate user's signature
   const locateMySignature = () => {
     const userSig = signatures.find(sig => sig.owner === userId);
-    if (!userSig || !wallScrollRef.current) return;
-
+    if (!userSig || !wallScrollRef.current) {
+      setUserMessage("No signature found.");
+      return;
+    }
+    
     const container = wallScrollRef.current;
-    const cx = userSig.x + userSig.w / 2;
-    const cy = userSig.y + userSig.h / 2;
-
-    const left = cx * zoom - container.clientWidth / 2;
-    const top = cy * zoom - container.clientHeight / 2;
-
+    const { rw, rh } = PlacementEngine.rotatedBounds(userSig.w, userSig.h, userSig.rot);
+    const cx = userSig.x + rw / 2;
+    const cy = userSig.y + rh / 2;
+    
+    const left = Math.max(0, Math.min(
+      cx - container.clientWidth / (2 * zoom),
+      WALL_WIDTH - container.clientWidth / zoom
+    ));
+    
+    const top = Math.max(0, Math.min(
+      cy - container.clientHeight / (2 * zoom),
+      WALL_HEIGHT - container.clientHeight / zoom
+    ));
+    
     container.scrollTo({ left, top, behavior: "smooth" });
-
+    
+    // Highlight signature
     const el = wallInnerRef.current?.querySelector(`[data-sig-id="${userSig.id}"]`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.setAttribute('data-flash', '1');
-      setTimeout(() => el.removeAttribute('data-flash'), 2000);
+      setTimeout(() => el.removeAttribute('data-flash'), 1500);
     }
   };
 
-  const handleCreateCampaign = async () => {
+  // Create new campaign
+  const handleCreateCampaign = () => {
     const trimmed = newCampaignText.trim().toUpperCase();
-    if (!trimmed) return;
+    if (!trimmed || campaigns.includes(trimmed)) return;
+    
+    const newCampaigns = [...campaigns, trimmed];
+    setCampaigns(newCampaigns);
+    setActiveCampaign(trimmed);
+    setNewCampaignText("");
+    localStorage.setItem('signatureShardsCampaigns', JSON.stringify(newCampaigns));
+  };
 
+  // Share campaign
+  const shareCampaign = async () => {
+    const shareData = {
+      title: `Signature Shards Campaign: ${activeCampaign}`,
+      text: `Join the signature campaign for ${activeCampaign} on Signature Shards!`,
+      url: window.location.href,
+    };
     try {
-      const { error } = await supabase.from('campaigns').insert({ name: trimmed });
-      if (error) throw error;
-      setCampaigns(prev => [...prev, trimmed]);
-      setActiveCampaign(trimmed);
-      setNewCampaignText("");
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareData.url);
+        setUserMessage("Campaign link copied to clipboard!");
+      }
     } catch (err) {
-      setUserMessage("Failed to create campaign.");
+      console.error("Share error:", err);
+      setUserMessage("Failed to share. Please copy the URL manually.");
     }
   };
 
-  const shareCampaign = () => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url);
-    setUserMessage("Link copied to clipboard!");
-  };
-
+  // Download campaign image using canvas API
   const downloadImage = async () => {
-    setUserMessage("Generating image...");
-    const canvas = document.createElement('canvas');
-    canvas.width = WALL_WIDTH;
-    canvas.height = WALL_HEIGHT;
-    const ctx = canvas.getContext('2d');
+    setUserMessage("Preparing your download...");
+    
+    try {
+      // Create a canvas to render the entire campaign
+      const canvas = document.createElement('canvas');
+      canvas.width = WALL_WIDTH;
+      canvas.height = WALL_HEIGHT;
+      const ctx = canvas.getContext('2d');
+      
+      // Fill background
+      ctx.fillStyle = '#f9fafb';
+      ctx.fillRect(0, 0, WALL_WIDTH, WALL_HEIGHT);
+      
+      // Draw text outline
+      drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, false);
+      
+      // Draw all signatures with promises for loading
+      const loadImage = (url) => new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+      });
 
-    drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, false);
-
-    for (const sig of signatures) {
-      const img = new Image();
-      img.src = sig.url;
-      await new Promise(resolve => img.onload = resolve);
-      ctx.save();
-      ctx.translate(sig.x + sig.w / 2, sig.y + sig.h / 2);
-      ctx.rotate(sig.rot);
-      ctx.drawImage(img, -sig.w / 2, -sig.h / 2, sig.w, sig.h);
-      ctx.restore();
+      for (const sig of signatures) {
+        const img = await loadImage(sig.url);
+        ctx.save();
+        ctx.translate(sig.x + sig.w / 2, sig.y + sig.h / 2);
+        ctx.rotate(sig.rot);
+        ctx.drawImage(img, -sig.w / 2, -sig.h / 2, sig.w, sig.h);
+        ctx.restore();
+      }
+      
+      // Create download link
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `signature-shards-${activeCampaign}.png`;
+      link.href = dataUrl;
+      link.click();
+      
+      setUserMessage("Image downloaded successfully!");
+    } catch (err) {
+      console.error("Error generating image:", err);
+      setUserMessage("Failed to generate image. Please try again.");
     }
-
-    const link = document.createElement('a');
-    link.download = `${activeCampaign}-signatures.png`;
-    link.href = canvas.toDataURL();
-    link.click();
-    setUserMessage("Image downloaded!");
   };
 
+  // Report issue
   const reportIssue = () => {
-    // Placeholder
-    setUserMessage("Issue reported. Thank you!");
+    const subject = `Issue Report: ${activeCampaign} Campaign`;
+    const body = `Please describe the issue you're experiencing with the ${activeCampaign} campaign:\n\nUser ID: ${userId}`;
+    
+    window.location.href = `mailto:support@signatureshards.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
-  const handleApprove = async (id) => {
-    await supabase.from('word_signatures').update({ approved: true }).eq('id', id);
+  // Load moderation queue for admin
+  useEffect(() => {
+    if (!isAdminLoggedIn) return;
+
+    const loadModerationQueue = async () => {
+      try {
+        const { data } = await supabase
+          .from('word_signatures')
+          .select('*')
+          .eq('needs_moderation', true); // Assume added column for moderation
+        setModerationQueue(data || []);
+      } catch (err) {
+        console.error('Moderation queue error:', err);
+      }
+    };
+
+    loadModerationQueue();
+  }, [isAdminLoggedIn]);
+
+  // Handle moderation (approve/reject)
+  const handleModerateSignature = async (sigId, approve) => {
+    try {
+      if (approve) {
+        await supabase.from('word_signatures').update({ needs_moderation: false }).eq('id', sigId);
+      } else {
+        await supabase.from('word_signatures').delete().eq('id', sigId);
+      }
+      setModerationQueue(prev => prev.filter(sig => sig.id !== sigId));
+    } catch (err) {
+      console.error('Moderation error:', err);
+    }
   };
 
-  const handleReject = async (id) => {
-    await supabase.from('word_signatures').delete().eq('id', id);
-  };
-
+  // Color palette
   const colorPalette = [
     '#111827', '#b91c1c', '#1d4ed8', '#0f766e', '#ca8a04', '#86198f',
     '#dc2626', '#2563eb', '#059669', '#d97706', '#7e22ce'
   ];
 
+  if (!activeCampaign) {
+    return <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">Loading...</div>;
+  }
+
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 to-purple-50 text-gray-900">
+      {/* Header */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-bold text-indigo-700">Signature Shards - Word Campaign</h1>
-            <button onClick={() => setShowAdminLogin(true)} className="text-sm text-gray-600 hover:text-indigo-700">
-              Admin Login
-            </button>
+            <div className="flex items-center">
+              <h1 className="text-xl font-bold text-indigo-700">Signature Shards</h1>
+              <span className="ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                Word Campaign
+              </span>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={() => setShowAdminLogin(true)}
+                className="text-sm text-gray-600 hover:text-indigo-700 transition-colors"
+              >
+                Admin Login
+              </button>
+              <a 
+                href="/" 
+                className="flex items-center text-sm text-gray-600 hover:text-indigo-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z" clipRule="evenodd" />
+                </svg>
+                Back to Home
+              </a>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {isAdminLoggedIn ? (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow">
-              <h2 className="text-xl font-bold mb-4">Campaign Management</h2>
-              <input 
-                value={newCampaignText}
-                onChange={e => setNewCampaignText(e.target.value)}
-                placeholder="New campaign name"
-                className="w-full p-2 border rounded mb-2"
-              />
-              <button onClick={handleCreateCampaign} className="bg-indigo-600 text-white p-2 rounded">Create</button>
-            </div>
-            <button onClick={() => setShowApprovalModal(true)} className="bg-yellow-500 text-white p-2 rounded">Approve Pending ({pendingSignatures.length})</button>
-          </div>
-        ) : (
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="space-y-6">
-              <div className="bg-white p-5 rounded-xl shadow">
-                <h2 className="text-lg font-bold mb-3">Campaigns</h2>
-                {campaigns.map(c => (
-                  <button key={c} onClick={() => setActiveCampaign(c)} className={`block w-full text-left p-2 ${activeCampaign === c ? 'bg-indigo-100' : ''}`}>
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <SignaturePad onExport={setUserSignature} color={penColor} />
-              <div className="bg-white p-5 rounded-xl shadow">
-                <h2 className="text-lg font-bold mb-3">Options</h2>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {isAdminLoggedIn ? (  
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">  
+            <h2 className="text-xl font-bold mb-6">Campaign Management</h2>  
+              
+            <div className="grid md:grid-cols-2 gap-8">  
+              <div>  
+                <h3 className="text-lg font-semibold mb-4">Create New Campaign</h3>  
+                <div className="space-y-4">  
+                  <div>  
+                    <label className="block text-sm font-medium text-gray-700 mb-1">  
+                      Campaign Text  
+                    </label>  
+                    <input  
+                      type="text"  
+                      value={newCampaignText}  
+                      onChange={e => setNewCampaignText(e.target.value)}  
+                      placeholder="Enter campaign text (short is best)"  
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"  
+                    />  
+                    <p className="text-xs text-gray-500 mt-1">  
+                      Keep it short (2-3 words) for best results  
+                    </p>  
+                  </div>  
+                    
+                  <button  
+                    onClick={handleCreateCampaign}  
+                    disabled={!newCampaignText.trim()}  
+                    className={`px-4 py-2 rounded-xl font-medium ${newCampaignText.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}  
+                  >  
+                    Create Campaign  
+                  </button>  
+                </div>  
+              </div>  
+                
+              <div>  
+                <h3 className="text-lg font-semibold mb-4">Existing Campaigns</h3>  
+                <div className="space-y-2 max-h-60 overflow-y-auto">  
+                  {campaigns.map(campaign => (  
+                    <div  
+                      key={campaign}  
+                      className={`p-3 rounded-lg border flex justify-between items-center ${activeCampaign === campaign ? 'bg-indigo-50 border-indigo-500' : 'bg-gray-50 border-gray-200'}`}  
+                    >  
+                      <span className="font-medium">"{campaign}"</span>  
+                      <div className="flex space-x-2">  
+                        <button  
+                          onClick={() => setActiveCampaign(campaign)}  
+                          className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded"  
+                        >  
+                          View  
+                        </button>  
+                        <button  
+                          onClick={() => {  
+                            if (!window.confirm(`Delete "${campaign}"? This will remove all signatures!`)) return;
+                            const newCampaigns = campaigns.filter(c => c !== campaign);  
+                            setCampaigns(newCampaigns);  
+                            if (activeCampaign === campaign && newCampaigns.length > 0) {  
+                              setActiveCampaign(newCampaigns[0]);  
+                            }  
+                            localStorage.setItem('signatureShardsCampaigns', JSON.stringify(newCampaigns));  
+                          }}  
+                          className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded"  
+                        >  
+                          Delete  
+                        </button>  
+                      </div>  
+                    </div>  
+                  ))}  
+                </div>  
+              </div>  
+            </div>  
+
+            {/* Admin Moderation Queue */}
+            <div className="mt-8">
+              <h3 className="text-lg font-semibold mb-4">Moderation Queue</h3>
+              {moderationQueue.length === 0 ? (
+                <p className="text-sm text-gray-500">No signatures pending moderation.</p>
+              ) : (
                 <div className="space-y-4">
-                  <div>
-                    Size: {Math.round(signatureSize * 100)}%
-                    <input type="range" min="0" max="1" step="0.01" value={signatureSize} onChange={e => setSignatureSize(e.target.value)} className="w-full" />
-                  </div>
-                  <div>
-                    Rotation: {rotation}°
-                    <input type="range" min="-45" max="45" value={rotation} onChange={e => setRotation(e.target.value)} className="w-full" />
-                  </div>
-                  <input 
-                    value={displayName}
-                    onChange={e => setDisplayName(e.target.value)}
-                    placeholder="Display Name"
-                    className="w-full p-2 border rounded"
-                  />
-                </div>
-              </div>
-              <div className="bg-white p-5 rounded-xl shadow">
-                <button onClick={handlePlaceSignature} disabled={userHasSigned} className="w-full bg-indigo-600 text-white p-2 rounded mb-2">
-                  Place Signature
-                </button>
-                <button onClick={handleRemoveSignature} disabled={!userHasSigned} className="w-full bg-red-600 text-white p-2 rounded mb-2">
-                  Remove Signature
-                </button>
-                <button onClick={locateMySignature} disabled={!userHasSigned} className="w-full bg-green-600 text-white p-2 rounded mb-2">
-                  Locate Signature
-                </button>
-                <button onClick={() => setShowTimeLapse(true)} className="w-full bg-blue-600 text-white p-2 rounded">
-                  View Time Lapse
-                </button>
-              </div>
-            </div>
-            <div className="lg:col-span-2">
-              <div className="bg-white p-5 rounded-xl shadow">
-                <h2 className="text-xl font-bold mb-4">{activeCampaign}</h2>
-                <div className="flex gap-2 mb-4">
-                  <button onClick={() => setZoom(z => z - 0.1)} className="p-2 bg-gray-200 rounded">-</button>
-                  <span>{(zoom * 100).toFixed(0)}%</span>
-                  <button onClick={() => setZoom(z => z + 0.1)} className="p-2 bg-gray-200 rounded">+</button>
-                </div>
-                <div ref={wallScrollRef} className="h-[70vh] overflow-auto relative border border-gray-200" style={{ background: 'radial-gradient(#d4d4d8 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
-                  <div ref={wallInnerRef} style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', minWidth: `${WALL_WIDTH}px`, minHeight: `${WALL_HEIGHT}px` }}>
-                    <TextOutlineGenerator text={activeCampaign} width={WALL_WIDTH} height={WALL_HEIGHT} />
-                    {signatures.map(sig => (
-                      <div key={sig.id} style={{
-                        position: 'absolute',
-                        left: sig.x,
-                        top: sig.y,
-                        width: sig.w,
-                        height: sig.h,
-                        transform: `rotate(${sig.rot * 180 / Math.PI}deg)`
-                      }}>
-                        <img src={sig.url} alt="" style={{ width: '100%', height: '100%' }} />
+                  {moderationQueue.map(sig => (
+                    <div key={sig.id} className="p-4 bg-gray-50 rounded-lg flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">Signature in {sig.campaign}</p>
+                        <p className="text-sm text-gray-600">By {sig.name || 'Anonymous'}</p>
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => handleModerateSignature(sig.id, true)}
+                          className="px-3 py-1 bg-green-100 text-green-700 rounded"
+                        >
+                          Approve
+                        </button>
+                        <button 
+                          onClick={() => handleModerateSignature(sig.id, false)}
+                          className="px-3 py-1 bg-red-100 text-red-700 rounded"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <p className="mt-2">Completion: {completionPercentage}%</p>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button onClick={shareCampaign} className="bg-blue-600 text-white p-2 rounded">Share</button>
-                <button onClick={downloadImage} className="bg-green-600 text-white p-2 rounded">Download</button>
-                <button onClick={reportIssue} className="bg-red-600 text-white p-2 rounded">Report</button>
-              </div>
+              )}
             </div>
-          </div>
+          </div>  
+        ) : (  
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">  
+            <div className="lg:col-span-1 space-y-6">  
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Select Campaign</h2>  
+                <div className="space-y-2 max-h-60 overflow-y-auto">  
+                  {campaigns.map(campaign => (  
+                    <button  
+                      key={campaign}  
+                      onClick={() => setActiveCampaign(campaign)}  
+                      className={`w-full text-left px-4 py-3 rounded-lg transition-all ${activeCampaign === campaign   
+                        ? 'bg-indigo-100 border-indigo-500 text-indigo-700 font-medium'   
+                        : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'  
+                      } border`}  
+                    >  
+                      "{campaign}"  
+                    </button>  
+                  ))}  
+                </div>  
+                <p className="text-xs text-gray-500 mt-3">  
+                  {signatures.length} signatures in this campaign ({fillPercentage}% filled)  
+                </p>  
+              </div>  
+
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Create Your Signature</h2>  
+                  
+                <SignaturePad   
+                  onExport={setUserSignature}   
+                  color={penColor}   
+                  width={320}  
+                  height={160}  
+                />  
+                  
+                <div className="mt-4">  
+                  <p className="text-sm font-medium text-gray-700 mb-2">Signature Color</p>  
+                  <div className="flex flex-wrap gap-2">  
+                    {colorPalette.map(color => (  
+                      <button  
+                        key={color}  
+                        onClick={() => setPenColor(color)}  
+                        className={`w-8 h-8 rounded-full border-2 transition-transform ${penColor === color ? 'scale-110 ring-2 ring-offset-2 ring-indigo-300' : 'hover:scale-105'}`}  
+                        style={{ backgroundColor: color, borderColor: color === '#111827' ? '#e5e7eb' : color }}  
+                        aria-label={`Select color ${color}`}  
+                      />  
+                    ))}  
+                  </div>  
+                </div>  
+              </div>  
+
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Signature Options</h2>  
+                  
+                <div className="space-y-4">  
+                  <div>  
+                    <label className="block text-sm font-medium text-gray-700 mb-1">  
+                      Size: <span className="text-indigo-600">{Math.round(signatureSize * 100)}%</span>  
+                    </label>  
+                    <input   
+                      type="range"   
+                      min="30"   
+                      max="70"   
+                      value={signatureSize * 100}   
+                      onChange={e => setSignatureSize(parseInt(e.target.value) / 100)}   
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"  
+                    />  
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">  
+                      <span>Smaller</span>  
+                      <span>Larger</span>  
+                    </div>  
+                  </div>  
+                    
+                  <div>  
+                    <label className="block text-sm font-medium text-gray-700 mb-1">  
+                      Rotation: <span className="text-indigo-600">{rotation}°</span>  
+                    </label>  
+                    <input   
+                      type="range"   
+                      min="-45"   
+                      max="45"   
+                      value={rotation}   
+                      onChange={e => setRotation(parseInt(e.target.value))}   
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"  
+                    />  
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">  
+                      <span>-45°</span>  
+                      <span>0°</span>  
+                      <span>45°</span>  
+                    </div>  
+                  </div>  
+                    
+                  <div>  
+                    <label className="block text-sm font-medium text-gray-700 mb-1">  
+                      Display Name (optional)  
+                    </label>  
+                    <input  
+                      type="text"  
+                      value={displayName}  
+                      onChange={e => setDisplayName(e.target.value.slice(0, 20))}  
+                      placeholder="How you'll be identified"  
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"  
+                    />  
+                    <p className="text-xs text-gray-500 mt-1">  
+                      {displayName.length}/20 characters  
+                    </p>  
+                  </div>  
+                </div>  
+              </div>  
+
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Add Your Signature</h2>  
+                  
+                <div className="space-y-3">  
+                  {userHasSigned ? (  
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">  
+                      <p className="text-sm text-blue-700 flex items-center">  
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />  
+                        </svg>  
+                        You've already signed this campaign  
+                      </p>  
+                    </div>  
+                  ) : (  
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">  
+                      <p className="text-sm text-amber-700">  
+                        Your signature will be permanently added to this artwork  
+                      </p>  
+                    </div>  
+                  )}  
+                    
+                  <button  
+                    onClick={handlePlaceSignature}  
+                    disabled={!userSignature || userHasSigned || userAction}  
+                    className={`w-full py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${  
+                      !userSignature || userHasSigned || userAction  
+                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'  
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'  
+                    }`}  
+                  >  
+                    {userAction === 'placing' ? (  
+                      <>  
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">  
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>  
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>  
+                        </svg>  
+                        Placing...  
+                      </>  
+                    ) : userHasSigned ? (  
+                      'Already Signed'  
+                    ) : (  
+                      'Place My Signature'  
+                    )}  
+                  </button>  
+                    
+                  <button  
+                    onClick={handleRemoveSignature}  
+                    disabled={!userHasSigned || userAction}  
+                    className={`w-full py-2 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${  
+                      !userHasSigned || userAction  
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'  
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'  
+                    }`}  
+                  >  
+                    {userAction === 'erasing' ? (  
+                      <>  
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">  
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>  
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>  
+                        </svg>  
+                        Removing...  
+                      </>  
+                    ) : (  
+                      'Remove My Signature'  
+                    )}  
+                  </button>  
+                    
+                  <button  
+                    onClick={locateMySignature}  
+                    disabled={!userHasSigned}  
+                    className={`w-full py-2 px-4 rounded-xl font-medium transition-all flex items-center justify-center ${  
+                      !userHasSigned  
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'  
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'  
+                    }`}  
+                  >  
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
+                      <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />  
+                    </svg>  
+                    Find My Signature  
+                  </button>  
+                    
+                  <div className="flex items-start mt-4">  
+                    <input  
+                      type="checkbox"  
+                      id="guidelinesCheckbox"  
+                      checked={guidelinesAccepted}  
+                      onChange={e => setGuidelinesAccepted(e.target.checked)}  
+                      className="h-4 w-4 text-indigo-600 border-gray-300 rounded mt-1 focus:ring-indigo-500"  
+                    />  
+                    <label htmlFor="guidelinesCheckbox" className="ml-2 block text-sm text-gray-700">  
+                      I agree to the <button   
+                        type="button"   
+                        onClick={() => setShowGuidelines(true)}   
+                        className="text-indigo-600 hover:underline"  
+                      >  
+                        Community Guidelines  
+                      </button>  
+                    </label>  
+                  </div>  
+                </div>  
+                  
+                {userMessage && (  
+                  <div className={`mt-4 p-3 rounded-lg text-sm ${  
+                    userMessage.toLowerCase().includes('fail') || userMessage.toLowerCase().includes('error') || userMessage.toLowerCase().includes('filled')  
+                      ? 'bg-red-50 text-red-700 border border-red-200'   
+                      : 'bg-green-50 text-green-700 border border-green-200'  
+                  }`}>  
+                    {userMessage}  
+                  </div>  
+                )}  
+              </div>  
+            </div>  
+
+            <div className="lg:col-span-2">  
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200 mb-5">  
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">  
+                  <h2 className="text-xl font-bold text-gray-900 mb-2 sm:mb-0">  
+                    "{activeCampaign}"  
+                  </h2>  
+                    
+                  <div className="flex items-center space-x-3">  
+                    <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5">  
+                      <button   
+                        onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} // Min zoom 10%
+                        className="text-gray-600 hover:text-indigo-700 p-1"  
+                        aria-label="Zoom out"  
+                      >  
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">  
+                          <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />  
+                        </svg>  
+                      </button>  
+                        
+                      <span className="mx-2 text-sm font-medium text-gray-700 min-w-[3rem] text-center">  
+                        {Math.round(zoom * 100)}%  
+                      </span>  
+                        
+                      <button   
+                        onClick={() => setZoom(z => Math.min(3, z + 0.1))} // Max zoom 300%
+                        className="text-gray-600 hover:text-indigo-700 p-1"  
+                        aria-label="Zoom in"  
+                      >  
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">  
+                          <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />  
+                        </svg>  
+                      </button>  
+                    </div>  
+                      
+                    <div className="text-sm text-gray-500 bg-gray-100 rounded-lg px-3 py-1.5">  
+                      {signatures.length} signatures  
+                    </div>  
+                  </div>  
+                </div>  
+                  
+                <div className="relative bg-gray-100 rounded-lg overflow-hidden border border-gray-300">  
+                  {isLoading ? (  
+                    <div className="h-[60vh] flex items-center justify-center">  
+                      <div className="text-center">  
+                        <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">  
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>  
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>  
+                        </svg>  
+                        <p className="mt-2 text-gray-600">Loading signatures...</p>  
+                      </div>  
+                    </div>  
+                  ) : (  
+                    <div   
+                      ref={wallScrollRef}  
+                      className="h-[60vh] overflow-auto relative"  
+                    >  
+                      <div  
+                        ref={wallInnerRef}  
+                        className="relative mx-auto my-6 min-w-full min-h-full" // Infinite feel
+                        style={{  
+                          width: `${WALL_WIDTH}px`,  
+                          height: `${WALL_HEIGHT}px`,  
+                          backgroundSize: '24px 24px',  
+                          backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',  
+                          backgroundRepeat: 'repeat', // Infinite background
+                          transform: `scale(${zoom})`,  
+                          transformOrigin: 'center center' // Center zoom
+                        }}  
+                      >  
+                        <TextOutlineGenerator   
+                          text={activeCampaign}   
+                          width={WALL_WIDTH}  
+                          height={WALL_HEIGHT}  
+                          className="absolute inset-0 pointer-events-none"  
+                        />  
+                          
+                        {signatures.map((sig) => (  
+                          <div   
+                            key={sig.id}   
+                            data-sig-id={sig.id}  
+                            className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-110 group"  
+                            style={{   
+                              left: `${sig.x}px`,   
+                              top: `${sig.y}px`,   
+                              width: `${sig.w}px`,   
+                              height: `${sig.h}px`,  
+                              transform: `rotate(${sig.rot * 180 / Math.PI}deg)`,  
+                              transformOrigin: 'center'  
+                            }}  
+                            onClick={(e) => {  
+                              e.stopPropagation();  
+                              setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, showName: !s.showName } : s));  
+                            }}  
+                          >  
+                            {sig.name && (  
+                              <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${  
+                                sig.showName ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'  
+                              } z-50`}>  
+                                {sig.name}  
+                              </div>  
+                            )}  
+                              
+                            <img   
+                              src={sig.url}   
+                              alt="signature"   
+                              className="w-full h-full object-contain"  
+                              draggable={false}  
+                            />  
+                          </div>  
+                        ))}  
+                      </div>  
+                    </div>  
+                  )}  
+                </div>  
+                  
+                <div className="mt-4 text-sm text-gray-600">  
+                  <p>✨ Each signature is placed without overlapping others, creating a beautiful mosaic within the campaign text.</p>  
+                  <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on signatures to see who left them.</p>  
+                </div>  
+              </div>  
+                
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>  
+                <p className="text-sm text-gray-600">  
+                  This word campaign brings together community signatures to form a powerful visual statement.   
+                  Each signature is a unique contribution to the collective message.  
+                </p>  
+                  
+                <div className="mt-4 flex flex-wrap gap-2">  
+                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    Share Campaign  
+                  </button>  
+                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    Download Image  
+                  </button>  
+                  <button onClick={() => setShowTimeLapse(true)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    View Time Lapse  
+                  </button>  
+                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    Report Issue  
+                  </button>  
+                </div>  
+              </div>  
+            </div>  
+          </div>  
         )}
       </main>
 
-      <CommunityGuidelinesModal isOpen={showGuidelines} onClose={() => setShowGuidelines(false)} onAccept={() => setGuidelinesAccepted(true)} />
-      <AdminLoginModal isOpen={showAdminLogin} onClose={() => setShowAdminLogin(false)} onLogin={() => setIsAdminLoggedIn(true)} />
-      <ApprovalModal isOpen={showApprovalModal} onClose={() => setShowApprovalModal(false)} pendingSignatures={pendingSignatures} onApprove={handleApprove} onReject={handleReject} />
-      <TimeLapseModal isOpen={showTimeLapse} onClose={() => setShowTimeLapse(false)} signatures={signatures} />
+      <CommunityGuidelinesModal
+        isOpen={showGuidelines}
+        onClose={() => setShowGuidelines(false)}
+        onAccept={() => {
+          setGuidelinesAccepted(true);
+          setShowGuidelines(false);
+        }}
+      />
+
+      <AdminLoginModal
+        isOpen={showAdminLogin}
+        onClose={() => setShowAdminLogin(false)}
+        onLogin={() => setIsAdminLoggedIn(true)}
+      />
+
+      <TimeLapseModal
+        isOpen={showTimeLapse}
+        onClose={() => setShowTimeLapse(false)}
+        signatures={signatures}
+        activeCampaign={activeCampaign}
+      />
+
+      <style>{`
+        [data-flash="1"] {
+          animation: flash 1.5s ease-in-out;
+        }
+        @keyframes flash {
+          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        input[type="range"] {
+          -webkit-appearance: none;
+          height: 6px;
+          background: #e5e7eb;
+          border-radius: 3px;
+          outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+      `}</style>
     </div>
   );
 }
