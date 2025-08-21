@@ -482,8 +482,10 @@ const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
 const TimeLapseModal = ({ isOpen, onClose, signatures, activeCampaign }) => {
   const canvasRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const animationRef = useRef(null);
-
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const sortedSignatures = useMemo(() => [...signatures].sort((a, b) => a.created_at - b.created_at), [signatures]);
+  
   useEffect(() => {
     if (!isOpen || !canvasRef.current) return;
 
@@ -492,48 +494,40 @@ const TimeLapseModal = ({ isOpen, onClose, signatures, activeCampaign }) => {
     canvas.height = WALL_HEIGHT;
     const ctx = canvas.getContext('2d');
 
-    // Sort signatures by creation time (assume created_at is in the data)
-    const sortedSignatures = [...signatures].sort((a, b) => a.created_at - b.created_at);
-
-    let frame = 0;
-    const playAnimation = () => {
-      if (frame >= sortedSignatures.length) {
-        setIsPlaying(false);
-        return;
-      }
-
-      // Clear canvas
+    // Draw specific frame
+    const drawFrame = (frame) => {
       ctx.clearRect(0, 0, WALL_WIDTH, WALL_HEIGHT);
-
-      // Draw text outline
       drawTextOnCanvas(ctx, activeCampaign, WALL_WIDTH, WALL_HEIGHT, false);
-
-      // Draw signatures up to current frame
       for (let i = 0; i <= frame; i++) {
         const sig = sortedSignatures[i];
+        if (!sig) break;
         const img = new Image();
         img.src = sig.url;
-        ctx.save();
-        ctx.translate(sig.x + sig.w / 2, sig.y + sig.h / 2);
-        ctx.rotate(sig.rot);
-        ctx.drawImage(img, -sig.w / 2, -sig.h / 2, sig.w, sig.h);
-        ctx.restore();
+        img.onload = () => {
+          ctx.save();
+          ctx.translate(sig.x + sig.w / 2, sig.y + sig.h / 2);
+          ctx.rotate(sig.rot);
+          ctx.drawImage(img, -sig.w / 2, -sig.h / 2, sig.w, sig.h);
+          ctx.restore();
+        };
       }
-
-      frame++;
-      animationRef.current = requestAnimationFrame(playAnimation);
     };
 
-    if (isPlaying) {
-      playAnimation();
+    drawFrame(currentFrame);
+
+    let timer;
+    if (isPlaying && currentFrame < sortedSignatures.length - 1) {
+      timer = setTimeout(() => {
+        setCurrentFrame(prev => prev + 1);
+      }, 1000 / speed);
+    } else if (currentFrame >= sortedSignatures.length - 1) {
+      setIsPlaying(false);
     }
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      if (timer) clearTimeout(timer);
     };
-  }, [isOpen, isPlaying, signatures, activeCampaign]);
+  }, [isOpen, isPlaying, currentFrame, sortedSignatures, activeCampaign, speed]);
 
   if (!isOpen) return null;
 
@@ -543,14 +537,34 @@ const TimeLapseModal = ({ isOpen, onClose, signatures, activeCampaign }) => {
         <h2 className="text-xl font-bold mb-4">Time Lapse: {activeCampaign}</h2>
         
         <canvas ref={canvasRef} className="w-full h-96 border border-gray-300" />
-        
-        <div className="flex justify-end gap-3 mt-4">
+        <div className="mt-4 flex items-center space-x-4">
           <button 
             onClick={() => setIsPlaying(!isPlaying)}
             className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
           >
             {isPlaying ? 'Pause' : 'Play'}
           </button>
+          <div className="flex items-center space-x-1">
+            <button 
+              onClick={() => setSpeed(s => Math.max(0.1, s - 0.1))}
+              className="px-2 py-1 bg-gray-200 rounded"
+            >-</button>
+            <span className="text-sm">Speed: {speed.toFixed(1)}x</span>
+            <button 
+              onClick={() => setSpeed(s => Math.min(5, s + 0.1))}
+              className="px-2 py-1 bg-gray-200 rounded"
+            >+</button>
+          </div>
+          <div className="flex-1">
+            <input 
+              type="range" 
+              min="0" 
+              max={sortedSignatures.length - 1} 
+              value={currentFrame} 
+              onChange={(e) => { setCurrentFrame(Number(e.target.value)); setIsPlaying(false); }} 
+              className="w-full"
+            />
+          </div>
           <button 
             onClick={onClose}
             className="px-4 py-2 rounded-lg bg-zinc-200 hover:bg-zinc-300"
@@ -873,8 +887,11 @@ export default function WordCampaignBoard() {
     const cy = userSig.y + rh / 2;
 
     if (autoZoom) {
-      // Auto zoom out to show context around signature
-      const targetZoom = Math.min(zoom, 0.5); // Zoom out to 50% or current if smaller
+      // Auto zoom to highlight signature
+      const targetZoom = Math.min(
+        Math.min(container.clientWidth / (rw * 2), container.clientHeight / (rh * 2)),
+        3
+      );
       setZoom(targetZoom);
     }
     
@@ -898,34 +915,20 @@ export default function WordCampaignBoard() {
     }
   };
 
-  // Fit to full content
+  // Fit to full content (show full word campaign)
   const fitToFullContent = () => {
-    if (!wallScrollRef.current || signatures.length === 0) return;
+    if (!wallScrollRef.current) return;
 
     const container = wallScrollRef.current;
-
-    // Calculate bounding box of all signatures
-    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
-    signatures.forEach(sig => {
-      const { rw, rh } = PlacementEngine.rotatedBounds(sig.w, sig.h, sig.rot);
-      minX = Math.min(minX, sig.x);
-      minY = Math.min(minY, sig.y);
-      maxX = Math.max(maxX, sig.x + rw);
-      maxY = Math.max(maxY, sig.y + rh);
-    });
-
-    const contentWidth = maxX - minX;
-    const contentHeight = maxY - minY;
-
-    // Calculate zoom to fit content
-    const zoomX = container.clientWidth / contentWidth;
-    const zoomY = container.clientHeight / contentHeight;
-    const targetZoom = Math.min(zoomX, zoomY) * 0.9; // 90% to add padding
+    // Calculate zoom to fit the full board text
+    const zoomX = container.clientWidth / WALL_WIDTH;
+    const zoomY = container.clientHeight / WALL_HEIGHT;
+    const targetZoom = Math.min(zoomX, zoomY);
     setZoom(targetZoom);
 
-    // Center scroll
-    const cx = minX + contentWidth / 2;
-    const cy = minY + contentHeight / 2;
+    // Center scroll to show entire board
+    const cx = WALL_WIDTH / 2;
+    const cy = WALL_HEIGHT / 2;
     const left = Math.max(0, cx - container.clientWidth / (2 * targetZoom));
     const top = Math.max(0, cy - container.clientHeight / (2 * targetZoom));
     container.scrollTo({ left, top, behavior: "smooth" });
@@ -1484,95 +1487,99 @@ export default function WordCampaignBoard() {
                       <div  
                         ref={wallInnerRef}  
                         className="relative mx-auto my-6 min-w-full min-h-full" // Infinite feel
-                        style={{  
-                          width: `${WALL_WIDTH}px`,  
-                          height: `${WALL_HEIGHT}px`,  
-                          backgroundSize: '24px 24px',  
-                          backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',  
+                        style={{
+                          width: `${WALL_WIDTH}px`,
+                          height: `${WALL_HEIGHT}px`,
+                          backgroundSize: '24px 24px',
+                          backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',
                           backgroundRepeat: 'repeat', // Infinite background
-                          transform: `scale(${zoom})`,  
+                          transform: `scale(${zoom})`,
                           transformOrigin: 'center center' // Center zoom
-                        }}  
+                        }}
                       >  
-                        <TextOutlineGenerator   
-                          text={activeCampaign}   
-                          width={WALL_WIDTH}  
-                          height={WALL_HEIGHT}  
-                          className="absolute inset-0 pointer-events-none"  
-                        />  
-                          
-                        {signatures.map((sig) => (  
-                          <div   
-                            key={sig.id}   
-                            data-sig-id={sig.id}  
-                            className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-110 group"  
-                            style={{   
-                              left: `${sig.x}px`,   
-                              top: `${sig.y}px`,   
-                              width: `${sig.w}px`,   
-                              height: `${sig.h}px`,  
-                              transform: `rotate(${sig.rot * 180 / Math.PI}deg)`,  
-                              transformOrigin: 'center'  
-                            }}  
-                            onClick={(e) => {  
-                              e.stopPropagation();  
-                              setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, showName: !s.showName } : s));  
-                            }}  
-                          >  
-                            {sig.name && (  
-                              <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${  
-                                sig.showName ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'  
-                              } z-50`}>  
-                                {sig.name}  
-                              </div>  
-                            )}  
-                              
-                            <img   
-                              src={sig.url}   
-                              alt="signature"   
-                              className="w-full h-full object-contain"  
-                              draggable={false}  
-                            />  
-                          </div>  
-                        ))}  
-                      </div>  
-                    </div>  
-                  )}  
-                </div>  
-                  
-                <div className="mt-4 text-sm text-gray-600">  
-                  <p>✨ Each signature is placed without overlapping others, creating a beautiful mosaic within the campaign text.</p>  
-                  <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on signatures to see who left them.</p>  
-                </div>  
-              </div>  
+                        <TextOutlineGenerator
+                          text={activeCampaign}
+                          width={WALL_WIDTH}
+                          height={WALL_HEIGHT}
+                          className="absolute inset-0 pointer-events-none"
+                        />
+                        
+                        {signatures.map((sig) => (
+                          <div
+                            key={sig.id}
+                            data-sig-id={sig.id}
+                            className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-110 group"
+                            style={{
+                              left: `${sig.x}px`,
+                              top: `${sig.y}px`,
+                              width: `${sig.w}px`,
+                              height: `${sig.h}px`,
+                              transform: `rotate(${sig.rot * 180 / Math.PI}deg)`,
+                              transformOrigin: 'center'
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Show name briefly on click
+                              setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, showName: true } : s));
+                              setTimeout(() => {
+                                setSignatures(prev => prev.map(s => s.id === sig.id ? { ...s, showName: false } : s));
+                              }, 3000);
+                            }}
+                          >
+                            {sig.name && (
+                              <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${
+                                sig.showName ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                              } z-50`}>
+                                {sig.name}
+                              </div>
+                            )}
+                            
+                            <img
+                              src={sig.url}
+                              alt="signature"
+                              className="w-full h-full object-contain"
+                              draggable={false}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 
-              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
-                <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>  
-                <p className="text-sm text-gray-600">  
-                  This word campaign brings together community signatures to form a powerful visual statement.   
-                  Each signature is a unique contribution to the collective message.  
-                </p>  
+                <div className="mt-4 text-sm text-gray-600">
+                  <p>✨ Each signature is placed without overlapping others, creating a beautiful mosaic within the campaign text.</p>
+                  <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on signatures to see who left them.</p>
+                </div>
+              </div>
+                
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+                <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>
+                <p className="text-sm text-gray-600">
+                  This word campaign brings together community signatures to form a powerful visual statement.
+                  Each signature is a unique contribution to the collective message.
+                </p>
                   
-                <div className="mt-4 flex flex-wrap gap-2">  
-                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    Share Campaign  
-                  </button>  
-                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    Download Image  
-                  </button>  
-                  <button onClick={() => setShowTimeLapse(true)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    View Time Lapse  
-                  </button>  
-                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    Report Issue  
-                  </button>  
-                  <button onClick={fitToFullContent} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
-                    View Full Campaign  
-                  </button>  
-                </div>  
-              </div>  
-            </div>  
-          </div>  
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                    Share Campaign
+                  </button>
+                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                    Download Image
+                  </button>
+                  <button onClick={() => setShowTimeLapse(true)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                    View Time Lapse
+                  </button>
+                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                    Report Issue
+                  </button>
+                  <button onClick={fitToFullContent} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+                    View Full Campaign
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
