@@ -1751,34 +1751,146 @@ export default function CampaignBoard() {
                       )}
                         
                       {confessions.map((conf) => (  
-                        <div   
-                          key={conf.id}   
-                          data-conf-id={conf.id}  
-                          className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-105 group"  
-                          style={{   
-                            left: `${conf.x}px`,   
-                            top: `${conf.y}px`,   
-                            width: `${conf.w}px`,   
-                            height: `${conf.h}px`,  
-                            transform: `rotate(${conf.rot * 180 / Math.PI}deg)`,  
-                            transformOrigin: 'center',
-                            filter: conf.needs_moderation ? 'grayscale(80%) opacity(70%)' : 'none'
-                          }}  
-                          onClick={() => handleConfessionClick(conf.id)}  
-                        >  
-                          {conf.name && (  
-                            <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${  
-                              shownConfessionId === conf.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'  
-                            } z-50`}>  
-                              {conf.name}  
-                              {conf.needs_moderation && ' (Under Review)'}
-                            </div>  
-                          )}  
-                            
-                          <div
-                            className="w-full h-full flex items-center justify-center text-center p-3"
-                            style={{
-                              backgroundColor: conf.bg_color || '#ffffff',
-                              color: conf.color || '#000000',
-                              border: `2px solid ${conf.border_color || '#e5e7eb'}`,
-                              borderRadius: conf.shape === 'circle' ? '50%' : conf.shape === 'rounded' ? '16
+                          <div   
+                            key={conf.id}   
+                            data-conf-id={conf.id}  
+                            className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-105 group"  
+                            style={{   
+                              left: `${conf.x}px`,   
+                              top: `${conf.y}px`,   
+                              width: `${conf.w}px`,   
+                              height: `${conf.h}px`,  
+                              transform: `rotate(${conf.rot * 180 / Math.PI}deg)`,  
+                              transformOrigin: 'center',
+                              filter: conf.needs_moderation ? 'grayscale(80%) opacity(70%)' : 'none'
+                            }}  
+                            onClick={() => handleConfessionClick(conf.id)}  
+                          >  
+                            {conf.name && (  
+                              <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${  
+                                shownConfessionId === conf.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'  
+                              } z-50`}>  
+                                {conf.name}  
+                                {conf.needs_moderation && ' (Under Review)'}
+                              </div>  
+                            )}  
+                              
+                            <div
+                              className="w-full h-full flex items-center justify-center text-center p-3"
+                              style={{
+                                backgroundColor: conf.bg_color || '#ffffff',
+                                color: conf.color || '#000000',
+                                border: `2px solid ${conf.border_color || '#e5e7eb'}`,
+                                borderRadius: conf.shape === 'circle' ? '50%' : conf.shape === 'rounded' ? '16px' : '0',
+                                fontFamily: conf.font_family || 'Arial',
+                                fontSize: `${conf.font_size || 14}px`,
+                                overflow: 'hidden',
+                                wordBreak: 'break-word'
+                              }}
+                            >
+                              {conf.text}
+                            </div>
+                          </div>  
+                        ))}  
+                      </div>  
+                    </div>  
+                  )}  
+                </div>  
+                  
+                <div className="mt-4 text-sm text-gray-600">  
+                  <p>✨ Each confession is styled uniquely, creating a beautiful mosaic of thoughts and secrets.</p>  
+                  <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on confessions to see who posted them.</p>  
+                </div>  
+              </div>  
+                
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>  
+                <p className="text-sm text-gray-600">  
+                  {activeCampaign.description || "This campaign brings together community confessions to form a visual tapestry of shared experiences. Each confession is a unique contribution to the collective story."}  
+                </p>  
+                  
+                <div className="mt-4 flex flex-wrap gap-2">  
+                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    Share Campaign  
+                  </button>  
+                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    Download Image  
+                  </button>  
+                  <button onClick={() => setShowTimeLapse(true)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    View Time Lapse  
+                  </button>  
+                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    Report Issue  
+                  </button>  
+                  <button onClick={fitToFullContent} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    View Full Campaign  
+                  </button>  
+                </div>  
+              </div>  
+            </div>  
+          </div>  
+        )}
+      </main>
+
+      <CommunityGuidelinesModal
+        isOpen={showGuidelines}
+        onClose={() => setShowGuidelines(false)}
+        onAccept={() => {
+          setGuidelinesAccepted(true);
+          setShowGuidelines(false);
+        }}
+      />
+
+      <AdminLoginModal
+        isOpen={showAdminLogin}
+        onClose={() => setShowAdminLogin(false)}
+        onLogin={() => setIsAdminLoggedIn(true)}
+      />
+
+      <TimeLapseModal
+        isOpen={showTimeLapse}
+        onClose={() => setShowTimeLapse(false)}
+        confessions={confessions}
+        activeCampaign={activeCampaign}
+      />
+
+      <style>{`
+        [data-flash="1"] {
+          animation: flash 1.5s ease-in-out;
+        }
+        @keyframes flash {
+          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        input[type="range"] {
+          -webkit-appearance: none;
+          height: 6px;
+          background: #e5e7eb;
+          border-radius: 3px;
+          outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+      `}</style>
+    </div>
+  );
+}
