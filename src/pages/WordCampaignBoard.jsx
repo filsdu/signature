@@ -955,29 +955,44 @@ export default function WordCampaignBoard() {
     }
   };
 
-  // Locate user's signature with auto zoom
-  const locateMySignature = (autoZoom = false) => {
-    const userSig = signatures.find(sig => sig.owner === userId);
-    if (!userSig || !wallScrollRef.current) {
-      setUserMessage("No signature found.");
-      return;
-    }
-    
-    const container = wallScrollRef.current;
-    const { rw, rh } = PlacementEngine.rotatedBounds(userSig.w, userSig.h, userSig.rot);
-    const cx = userSig.x + rw / 2;
-    const cy = userSig.y + rh / 2;
+// Locate user's signature with proper zoom calculation
+const locateMySignature = (autoZoom = false) => {
+  const userSig = signatures.find(sig => sig.owner === userId);
+  if (!userSig || !wallScrollRef.current) {
+    setUserMessage("No signature found.");
+    return;
+  }
+  
+  const container = wallScrollRef.current;
+  const { rw, rh } = PlacementEngine.rotatedBounds(userSig.w, userSig.h, userSig.rot);
+  const cx = userSig.x + rw / 2;
+  const cy = userSig.y + rh / 2;
 
-    if (autoZoom) {
-      // Calculate optimal zoom to show signature clearly
-      const targetZoom = Math.min(
-        1, // Cap at 100%
-        (container.clientWidth - 40) / (rw * 1.5), // 1.5 times the signature width with padding
-        (container.clientHeight - 40) / (rh * 1.5)
-      );
-      setZoom(Math.max(0.2, Math.min(2, targetZoom))); // Keep between 20% and 200%
-    }
+  if (autoZoom) {
+    // Calculate optimal zoom to show signature clearly (approximately 30% of viewport)
+    const zoomX = (container.clientWidth * 0.3) / rw;
+    const zoomY = (container.clientHeight * 0.3) / rh;
+    const targetZoom = Math.min(1, Math.max(zoomX, zoomY, 0.5));
+    setZoom(targetZoom);
     
+    // Wait for zoom to take effect before scrolling
+    setTimeout(() => {
+      if (wallScrollRef.current) {
+        const left = Math.max(0, Math.min(
+          cx - container.clientWidth / (2 * targetZoom),
+          WALL_WIDTH - container.clientWidth / targetZoom
+        ));
+        
+        const top = Math.max(0, Math.min(
+          cy - container.clientHeight / (2 * targetZoom),
+          WALL_HEIGHT - container.clientHeight / targetZoom
+        ));
+        
+        container.scrollTo({ left, top, behavior: "smooth" });
+      }
+    }, 50);
+  } else {
+    // Just scroll to signature without changing zoom
     const left = Math.max(0, Math.min(
       cx - container.clientWidth / (2 * zoom),
       WALL_WIDTH - container.clientWidth / zoom
@@ -989,77 +1004,86 @@ export default function WordCampaignBoard() {
     ));
     
     container.scrollTo({ left, top, behavior: "smooth" });
+  }
+  
+  // Highlight signature
+  const el = wallInnerRef.current?.querySelector(`[data-sig-id="${userSig.id}"]`);
+  if (el) {
+    el.setAttribute('data-flash', '1');
+    setTimeout(() => el.removeAttribute('data-flash'), 1500);
+  }
+};
+
+// Fit to full content with proper bounds calculation
+const fitToFullContent = () => {
+  if (!wallScrollRef.current || signatures.length === 0) return;
+
+  const container = wallScrollRef.current;
+
+  // Calculate bounding box of all content (signatures + text outline)
+  let minX = WALL_WIDTH, minY = WALL_HEIGHT, maxX = 0, maxY = 0;
+  
+  // Include text outline bounds
+  if (maskCanvas) {
+    const ctx = maskCanvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    const data = imageData.data;
     
-    // Highlight signature
-    const el = wallInnerRef.current?.querySelector(`[data-sig-id="${userSig.id}"]`);
-    if (el) {
-      el.setAttribute('data-flash', '1');
-      setTimeout(() => el.removeAttribute('data-flash'), 1500);
-    }
-  };
-
-  // Fit to full content
-  const fitToFullContent = () => {
-    if (!wallScrollRef.current || signatures.length === 0) return;
-
-    const container = wallScrollRef.current;
-
-    // Calculate bounding box of all signatures
-    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
-    signatures.forEach(sig => {
-      const { rw, rh } = PlacementEngine.rotatedBounds(sig.w, sig.h, sig.rot);
-      minX = Math.min(minX, sig.x);
-      minY = Math.min(minY, sig.y);
-      maxX = Math.max(maxX, sig.x + rw);
-      maxY = Math.max(maxY, sig.y + rh);
-    });
-
-    // Add text outline bounds if needed
-    if (maskCanvas) {
-      const ctx = maskCanvas.getContext('2d');
-      const imageData = ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-      const data = imageData.data;
-      
-      let textMinX = Infinity, textMinY = Infinity, textMaxX = 0, textMaxY = 0;
-      let foundPixel = false;
-      
-      for (let y = 0; y < maskCanvas.height; y++) {
-        for (let x = 0; x < maskCanvas.width; x++) {
-          const alpha = data[(y * maskCanvas.width + x) * 4 + 3];
-          if (alpha > 0) {
-            foundPixel = true;
-            textMinX = Math.min(textMinX, x);
-            textMinY = Math.min(textMinY, y);
-            textMaxX = Math.max(textMaxX, x);
-            textMaxY = Math.max(textMaxY, y);
-          }
+    let foundPixel = false;
+    
+    for (let y = 0; y < maskCanvas.height; y++) {
+      for (let x = 0; x < maskCanvas.width; x++) {
+        const alpha = data[(y * maskCanvas.width + x) * 4 + 3];
+        if (alpha > 0) {
+          foundPixel = true;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
         }
       }
-      
-      if (foundPixel) {
-        minX = Math.min(minX, textMinX);
-        minY = Math.min(minY, textMinY);
-        maxX = Math.max(maxX, textMaxX);
-        maxY = Math.max(maxY, textMaxY);
-      }
     }
+  }
 
-    const contentWidth = maxX - minX;
-    const contentHeight = maxY - minY;
+  // Include all signatures
+  signatures.forEach(sig => {
+    const { rw, rh } = PlacementEngine.rotatedBounds(sig.w, sig.h, sig.rot);
+    minX = Math.min(minX, sig.x);
+    minY = Math.min(minY, sig.y);
+    maxX = Math.max(maxX, sig.x + rw);
+    maxY = Math.max(maxY, sig.y + rh);
+  });
 
-    // Calculate zoom to fit content
-    const zoomX = container.clientWidth / contentWidth;
-    const zoomY = container.clientHeight / contentHeight;
-    const targetZoom = Math.min(zoomX, zoomY, 1) * 0.9; // 90% to add padding
-    setZoom(targetZoom);
+  // Add some padding
+  const padding = 50;
+  minX = Math.max(0, minX - padding);
+  minY = Math.max(0, minY - padding);
+  maxX = Math.min(WALL_WIDTH, maxX + padding);
+  maxY = Math.min(WALL_HEIGHT, maxY + padding);
 
-    // Center scroll
-    const cx = minX + contentWidth / 2;
-    const cy = minY + contentHeight / 2;
-    const left = Math.max(0, cx - container.clientWidth / (2 * targetZoom));
-    const top = Math.max(0, cy - container.clientHeight / (2 * targetZoom));
-    container.scrollTo({ left, top, behavior: "smooth" });
-  };
+  const contentWidth = maxX - minX;
+  const contentHeight = maxY - minY;
+
+  // Calculate zoom to fit content
+  const zoomX = container.clientWidth / contentWidth;
+  const zoomY = container.clientHeight / contentHeight;
+  const targetZoom = Math.min(zoomX, zoomY, 1); // Cap at 100% zoom
+  
+  setZoom(targetZoom);
+
+  // Wait for zoom to take effect before centering
+  setTimeout(() => {
+    if (wallScrollRef.current) {
+      const cx = minX + contentWidth / 2;
+      const cy = minY + contentHeight / 2;
+      
+      const left = Math.max(0, cx - container.clientWidth / (2 * targetZoom));
+      const top = Math.max(0, cy - container.clientHeight / (2 * targetZoom));
+      
+      container.scrollTo({ left, top, behavior: "smooth" });
+    }
+  }, 50);
+};
 
   // Create new campaign
   const handleCreateCampaign = () => {
