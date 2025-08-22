@@ -1,10 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-// Supabase client
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Supabase client initialization with fallback
+let supabase = null;
+let isSupabaseAvailable = false;
+
+try {
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    isSupabaseAvailable = true;
+  } else {
+    console.warn("Supabase configuration missing. Running in fallback mode.");
+  }
+} catch (err) {
+  console.error("Error initializing Supabase:", err);
+}
 
 // Constants
 const WALL_WIDTH = 5000;
@@ -468,7 +481,7 @@ export default function CampaignBoard() {
   const [rotation, setRotation] = useState(0);
   const [displayName, setDisplayName] = useState("");
   const [zoom, setZoom] = useState(0.5);
-  const [isLoading, setIsLoading] = useState(false); // Changed to false to avoid initial loading state
+  const [isLoading, setIsLoading] = useState(true);
   const [userMessage, setUserMessage] = useState("");
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [guidelinesAccepted, setGuidelinesAccepted] = useState(false);
@@ -484,6 +497,9 @@ export default function CampaignBoard() {
   const [placementMode, setPlacementMode] = useState("auto");
   const [pendingManualSpot, setPendingManualSpot] = useState(null);
   const nameTimeoutRef = useRef(null);
+
+  // Fallback mode flag
+  const isFallbackMode = !isSupabaseAvailable;
 
   // Refs
   const wallScrollRef = useRef(null);
@@ -517,41 +533,61 @@ export default function CampaignBoard() {
   // Load campaigns
   useEffect(() => {
     const loadCampaigns = async () => {
+      setIsLoading(true);
       try {
-        setIsLoading(true); // Set loading true when fetching campaigns
-        const { data, error } = await supabase  
-          .from("campaigns")  
-          .select("*")  
-          .order("created_at", { ascending: true });
+        let data = [];
+        if (isSupabaseAvailable) {
+          const { data: campaignsData, error } = await supabase  
+            .from("campaigns")  
+            .select("*")  
+            .order("created_at", { ascending: true });
+          
+          if (error) throw error;
+          data = campaignsData;
+        }
         
-        if (error) throw error;
-        
-        if (data.length > 0) {  
-          setCampaigns(data);  
-          setActiveCampaign(data[0]);  
-        } else {  
-          // Create default campaign if none exists
+        if (data.length === 0) {  
+          // Create default campaign
           const defaultCampaign = {
+            id: `fallback-${crypto.randomUUID()}`,
             title: "Confessions",
-            description: "Share your thoughts and secrets anonymously"
+            description: "Share your thoughts and secrets anonymously",
+            created_at: new Date().toISOString()
           };
           
-          const { data: newCampaign, error: insertError } = await supabase
-            .from("campaigns")
-            .insert(defaultCampaign)
-            .select()
-            .single();
-            
-          if (insertError) throw insertError;
-          
-          setCampaigns([newCampaign]);  
-          setActiveCampaign(newCampaign);  
+          if (isSupabaseAvailable) {
+            const { data: newCampaign, error: insertError } = await supabase
+              .from("campaigns")
+              .insert(defaultCampaign)
+              .select()
+              .single();
+              
+            if (insertError) throw insertError;
+            data = [newCampaign];
+          } else {
+            data = [defaultCampaign];
+          }
+        }
+        
+        setCampaigns(data);  
+        setActiveCampaign(data[0]);  
+        if (isFallbackMode) {
+          setUserMessage("Running in offline mode. Some features may be limited.");
         }
       } catch (err) {
         console.error("Error loading campaigns:", err);
-        setUserMessage("Failed to load campaigns. Please refresh.");
+        // Fallback to default campaign
+        const defaultCampaign = {
+          id: `fallback-${crypto.randomUUID()}`,
+          title: "Confessions",
+          description: "Share your thoughts and secrets anonymously",
+          created_at: new Date().toISOString()
+        };
+        setCampaigns([defaultCampaign]);
+        setActiveCampaign(defaultCampaign);
+        setUserMessage("Failed to connect to server. Running in offline mode.");
       } finally {
-        setIsLoading(false); // Ensure loading is set to false
+        setIsLoading(false);
       }
     };
     
@@ -565,13 +601,17 @@ export default function CampaignBoard() {
     const loadConfessions = async () => {
       setIsLoading(true);
       try {
-        const { data, error } = await supabase  
-          .from("confessions")  
-          .select("*")  
-          .eq("campaign_id", activeCampaign.id)  
-          .order("created_at", { ascending: true });  
-        
-        if (error) throw error;
+        let data = [];
+        if (isSupabaseAvailable && !activeCampaign.id.startsWith('fallback-')) {
+          const { data: confessionsData, error } = await supabase  
+            .from("confessions")  
+            .select("*")  
+            .eq("campaign_id", activeCampaign.id)  
+            .order("created_at", { ascending: true });  
+          
+          if (error) throw error;
+          data = confessionsData;
+        }
         
         const formattedConfessions = data.map(row => ({  
           id: row.id,  
@@ -600,7 +640,8 @@ export default function CampaignBoard() {
         setFillPercentage(Math.min(100, Math.round((confArea / totalArea) * 100)));
       } catch (err) {
         console.error("Error loading confessions:", err);  
-        setUserMessage("Unable to load confessions. Please refresh the page.");  
+        setUserMessage("Unable to load confessions. Using local data.");  
+        setConfessions([]);
       } finally {
         setIsLoading(false);
       }
@@ -609,43 +650,21 @@ export default function CampaignBoard() {
     loadConfessions();
     
     // Set up realtime subscription
-    const channel = supabase
-      .channel(`confessions:${activeCampaign.id}`)
-      .on("postgres_changes", 
-        { 
-          event: "*", 
-          schema: "public", 
-          table: "confessions", 
-          filter: `campaign_id=eq.${activeCampaign.id}` 
-        }, 
-        (payload) => {  
-          if (payload.eventType === "INSERT") {  
-            const newConf = {  
-              id: payload.new.id,  
-              text: payload.new.text,
-              color: payload.new.color,
-              bg_color: payload.new.bg_color,
-              border_color: payload.new.border_color,
-              shape: payload.new.shape,
-              font_family: payload.new.font_family,
-              font_size: payload.new.font_size,
-              x: payload.new.x,  
-              y: payload.new.y,  
-              w: payload.new.w,  
-              h: payload.new.h,  
-              rot: (payload.new.rot_deg || 0) * Math.PI / 180,  
-              owner: payload.new.owner,  
-              name: payload.new.name || '',  
-              created_at: payload.new.created_at,
-              needs_moderation: payload.new.needs_moderation
-            };  
-            setConfessions(prev => [...prev, newConf]);  
-          } else if (payload.eventType === "DELETE") {  
-            setConfessions(prev => prev.filter(p => p.id !== payload.old.id));  
-          } else if (payload.eventType === "UPDATE") {  
-            setConfessions(prev => prev.map(p =>   
-              p.id === payload.new.id ? {  
-                ...p,  
+    let channel = null;
+    if (isSupabaseAvailable && !activeCampaign.id.startsWith('fallback-')) {
+      channel = supabase
+        .channel(`confessions:${activeCampaign.id}`)
+        .on("postgres_changes", 
+          { 
+            event: "*", 
+            schema: "public", 
+            table: "confessions", 
+            filter: `campaign_id=eq.${activeCampaign.id}` 
+          }, 
+          (payload) => {  
+            if (payload.eventType === "INSERT") {  
+              const newConf = {  
+                id: payload.new.id,  
                 text: payload.new.text,
                 color: payload.new.color,
                 bg_color: payload.new.bg_color,
@@ -658,22 +677,49 @@ export default function CampaignBoard() {
                 w: payload.new.w,  
                 h: payload.new.h,  
                 rot: (payload.new.rot_deg || 0) * Math.PI / 180,  
-                name: payload.new.name || '',
+                owner: payload.new.owner,  
+                name: payload.new.name || '',  
                 created_at: payload.new.created_at,
                 needs_moderation: payload.new.needs_moderation
-              } : p  
-            ));  
-          }  
-        }
-      )
-      .subscribe((status, err) => {
-        if (err) console.error("Subscription error:", err);
-      });
+              };  
+              setConfessions(prev => [...prev, newConf]);  
+            } else if (payload.eventType === "DELETE") {  
+              setConfessions(prev => prev.filter(p => p.id !== payload.old.id));  
+            } else if (payload.eventType === "UPDATE") {  
+              setConfessions(prev => prev.map(p =>   
+                p.id === payload.new.id ? {  
+                  ...p,  
+                  text: payload.new.text,
+                  color: payload.new.color,
+                  bg_color: payload.new.bg_color,
+                  border_color: payload.new.border_color,
+                  shape: payload.new.shape,
+                  font_family: payload.new.font_family,
+                  font_size: payload.new.font_size,
+                  x: payload.new.x,  
+                  y: payload.new.y,  
+                  w: payload.new.w,  
+                  h: payload.new.h,  
+                  rot: (payload.new.rot_deg || 0) * Math.PI / 180,  
+                  name: payload.new.name || '',
+                  created_at: payload.new.created_at,
+                  needs_moderation: payload.new.needs_moderation
+                } : p  
+              ));  
+            }  
+          }
+        )
+        .subscribe((status, err) => {
+          if (err) console.error("Subscription error:", err);
+        });
+    }
     
     return () => {
-      supabase.removeChannel(channel);
+      if (channel && isSupabaseAvailable) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [activeCampaign]);
+  }, [activeCampaign, isFallbackMode]);
 
   // Handle confession placement
   const handlePlaceConfession = async () => {
@@ -766,6 +812,7 @@ export default function CampaignBoard() {
       }
 
       const confessionData = {  
+        id: `fallback-${crypto.randomUUID()}`, // For fallback mode
         campaign_id: activeCampaign.id,  
         owner: userId,  
         text: confessionText.trim(),  
@@ -780,14 +827,19 @@ export default function CampaignBoard() {
         w, h,  
         rot_deg: rotDeg,  
         name: displayName.trim().slice(0, 20),
-        needs_moderation: containsBadWords(confessionText) // Moderate if contains bad words
+        created_at: new Date().toISOString(),
+        needs_moderation: containsBadWords(confessionText)
       };
 
-      const { error } = await supabase  
-        .from("confessions")  
-        .insert(confessionData);
+      if (isSupabaseAvailable && !activeCampaign.id.startsWith('fallback-')) {
+        const { error } = await supabase  
+          .from("confessions")  
+          .insert({ ...confessionData, id: undefined }); // Let Supabase generate ID
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        setConfessions(prev => [...prev, confessionData]);
+      }
       
       setUserMessage("Your confession has been added to the campaign!");  
       setConfessionText("");  
@@ -815,16 +867,17 @@ export default function CampaignBoard() {
     setUserMessage("Removing your confession...");
     
     try {
-      const { error } = await supabase
-        .from("confessions")  
-        .delete()  
-        .eq("id", userConf.id)
-        .eq("owner", userId);
-      
-      if (error) throw error;
+      if (isSupabaseAvailable && !userConf.id.startsWith('fallback-')) {
+        const { error } = await supabase
+          .from("confessions")  
+          .delete()  
+          .eq("id", userConf.id)
+          .eq("owner", userId);
+        
+        if (error) throw error;
+      }
       
       setConfessions(prev => prev.filter(conf => conf.id !== userConf.id));
-      
       setUserMessage("Your confession has been removed.");  
     } catch (err) {
       console.error("Error removing confession:", err);  
@@ -918,16 +971,26 @@ export default function CampaignBoard() {
     if (!title) return;
     
     try {
-      const { data, error } = await supabase
-        .from("campaigns")
-        .insert({ title, description })
-        .select()
-        .single();
+      let newCampaign = {
+        id: `fallback-${crypto.randomUUID()}`,
+        title,
+        description,
+        created_at: new Date().toISOString()
+      };
       
-      if (error) throw error;
+      if (isSupabaseAvailable) {
+        const { data, error } = await supabase
+          .from("campaigns")
+          .insert({ title, description })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        newCampaign = data;
+      }
       
-      setCampaigns(prev => [...prev, data]);
-      setActiveCampaign(data);
+      setCampaigns(prev => [...prev, newCampaign]);
+      setActiveCampaign(newCampaign);
       setNewCampaignTitle("");
       setNewCampaignDescription("");
       
@@ -1064,7 +1127,7 @@ export default function CampaignBoard() {
 
   // Load moderation queue for admin
   useEffect(() => {
-    if (!isAdminLoggedIn) return;
+    if (!isAdminLoggedIn || isFallbackMode) return;
 
     const loadModerationQueue = async () => {
       try {
@@ -1075,23 +1138,26 @@ export default function CampaignBoard() {
         setModerationQueue(data || []);
       } catch (err) {
         console.error('Moderation queue error:', err);
+        setModerationQueue([]);
       }
     };
 
     loadModerationQueue();
-  }, [isAdminLoggedIn]);
+  }, [isAdminLoggedIn, isFallbackMode]);
 
   // Handle moderation (approve/reject)
   const handleModerateConfession = async (confId, approve) => {
     try {
-      if (approve) {
-        await supabase.from('confessions').update({ needs_moderation: false }).eq('id', confId);
-      } else {
-        await supabase.from('confessions').delete().eq('id', confId);
+      if (isSupabaseAvailable && !confId.startsWith('fallback-')) {
+        if (approve) {
+          await supabase.from('confessions').update({ needs_moderation: false }).eq('id', confId);
+        } else {
+          await supabase.from('confessions').delete().eq('id', confId);
+        }
       }
       setModerationQueue(prev => prev.filter(conf => conf.id !== confId));
       
-      // Also update the local state
+      // Update local state
       setConfessions(prev => approve 
         ? prev.map(conf => conf.id === confId ? { ...conf, needs_moderation: false } : conf)
         : prev.filter(conf => conf.id !== confId)
@@ -1144,29 +1210,10 @@ export default function CampaignBoard() {
     'Impact', 'Comic Sans MS', 'Trebuchet MS', 'Arial Black', 'Palatino'
   ];
 
-  // Render a fallback UI if no active campaign is set
   if (!activeCampaign) {
     return (
       <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        {isLoading ? (
-          <div className="text-center">
-            <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p className="mt-2 text-gray-600">Loading campaigns...</p>
-          </div>
-        ) : (
-          <div className="text-center">
-            <p className="text-gray-600">No campaigns available. Please try again later or contact support.</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              Refresh
-            </button>
-          </div>
-        )}
+        {isLoading ? "Loading..." : "Running in offline mode. Create a confession to start."}
       </div>
     );
   }
@@ -1272,26 +1319,37 @@ export default function CampaignBoard() {
                           View  
                         </button>  
                         <button  
-                          onClick={() => {  
+                          onClick={async () => {  
                             if (!window.confirm(`Delete "${campaign.title}"? This will remove all confessions!`)) return;
-                            // Delete campaign and its confessions
-                            supabase
-                              .from('confessions')
-                              .delete()
-                              .eq('campaign_id', campaign.id)
-                              .then(() => {
-                                supabase
+                            try {
+                              if (isSupabaseAvailable && !campaign.id.startsWith('fallback-')) {
+                                await supabase
+                                  .from('confessions')
+                                  .delete()
+                                  .eq('campaign_id', campaign.id);
+                                await supabase
                                   .from('campaigns')
                                   .delete()
-                                  .eq('id', campaign.id)
-                                  .then(() => {
-                                    const newCampaigns = campaigns.filter(c => c.id !== campaign.id);  
-                                    setCampaigns(newCampaigns);  
-                                    if (activeCampaign.id === campaign.id && newCampaigns.length > 0) {  
-                                      setActiveCampaign(newCampaigns[0]);  
-                                    }
-                                  });
-                              });
+                                  .eq('id', campaign.id);
+                              }
+                              const newCampaigns = campaigns.filter(c => c.id !== campaign.id);  
+                              setCampaigns(newCampaigns);  
+                              if (activeCampaign.id === campaign.id && newCampaigns.length > 0) {  
+                                setActiveCampaign(newCampaigns[0]);  
+                              } else if (newCampaigns.length === 0) {
+                                const defaultCampaign = {
+                                  id: `fallback-${crypto.randomUUID()}`,
+                                  title: "Confessions",
+                                  description: "Share your thoughts and secrets anonymously",
+                                  created_at: new Date().toISOString()
+                                };
+                                setCampaigns([defaultCampaign]);
+                                setActiveCampaign(defaultCampaign);
+                              }
+                            } catch (err) {
+                              console.error("Error deleting campaign:", err);
+                              setUserMessage("Failed to delete campaign. Please try again.");
+                            }
                           }}  
                           className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded"  
                         >  
@@ -1739,7 +1797,9 @@ export default function CampaignBoard() {
                   </div>  
                 </div>  
                   
-             <div className="h-[60vh] flex items-center justify-center">  
+                <div className="relative bg-gray-100 rounded-lg overflow-hidden border border-gray-300">  
+                  {isLoading ? (  
+                    <div className="h-[60vh] flex items-center justify-center">  
                       <div className="text-center">  
                         <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">  
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>  
@@ -1748,162 +1808,182 @@ export default function CampaignBoard() {
                         <p className="mt-2 text-gray-600">Loading confessions...</p>  
                       </div>  
                     </div>  
-                  ) : confessions.length === 0 ? (  
-                    <div className="h-[60vh] flex items-center justify-center">  
-                      <div className="text-center">  
-                        <p className="text-gray-600">No confessions yet. Be the first to share!</p>  
-                      </div>  
-                    </div>  
                   ) : (  
-                    <div  
+                    <div   
                       ref={wallScrollRef}  
-                      className="relative w-full h-[60vh] overflow-auto"  
-                      style={{ overscrollBehavior: 'contain' }}  
-                      onClick={onWallClick}  
+                      className="h-[60vh] overflow-auto relative"  
+                      onClick={onWallClick}
                     >  
-                      <div  
+                      <div
                         ref={wallInnerRef}  
-                        className="relative bg-gray-50"  
+                        className="relative mx-auto my-6 min-w-full min-h-full"
                         style={{  
-                          width: `${WALL_WIDTH * zoom}px`,  
-                          height: `${WALL_HEIGHT * zoom}px`,  
+                          width: `${WALL_WIDTH}px`,  
+                          height: `${WALL_HEIGHT}px`,  
+                          backgroundSize: '24px 24px',  
+                          backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)',  
+                          backgroundRepeat: 'repeat',
                           transform: `scale(${zoom})`,  
-                          transformOrigin: 'top left'  
+                          transformOrigin: 'center center'
                         }}  
                       >  
-                        {pendingManualSpot && placementMode === 'manual' && (  
-                          <div  
-                            className="absolute w-4 h-4 bg-red-500 rounded-full transform -translate-x-1/2 -translate-y-1/2 animate-pulse"  
-                            style={{  
-                              left: pendingManualSpot.x * zoom,  
-                              top: pendingManualSpot.y * zoom  
-                            }}  
-                          />  
-                        )}  
-
-                        {confessions.map(conf => conf.needs_moderation && !isAdminLoggedIn ? null : (  
-                          <div  
-                            key={conf.id}  
+                        {placementMode === 'manual' && pendingManualSpot && (
+                          <div 
+                            className="absolute pointer-events-none"
+                            style={{ 
+                              left: pendingManualSpot.x - 8, 
+                              top: pendingManualSpot.y - 8, 
+                              width: 16, 
+                              height: 16,
+                              borderRadius: '50%', 
+                              border: '2px solid #3b82f6', 
+                              boxShadow: '0 0 0 4px rgba(59,130,246,0.2)',
+                              zIndex: 1000
+                            }} 
+                          />
+                        )}
+                          
+                        {confessions.map((conf) => (  
+                          <div   
+                            key={conf.id}   
                             data-conf-id={conf.id}  
-                            className="absolute select-none transition-all duration-300"  
-                            style={{  
-                              left: conf.x,  
-                              top: conf.y,  
-                              width: conf.w,  
-                              height: conf.h,  
+                            className="absolute select-none transition-transform duration-200 hover:z-50 hover:scale-105 group"  
+                            style={{   
+                              left: `${conf.x}px`,   
+                              top: `${conf.y}px`,   
+                              width: `${conf.w}px`,   
+                              height: `${conf.h}px`,  
                               transform: `rotate(${conf.rot * 180 / Math.PI}deg)`,  
-                              transformOrigin: 'center center'  
+                              transformOrigin: 'center',
+                              filter: conf.needs_moderation ? 'grayscale(80%) opacity(70%)' : 'none'
                             }}  
                             onClick={() => handleConfessionClick(conf.id)}  
                           >  
-                            <div  
-                              className={`w-full h-full p-3 flex items-center justify-center border-2 transition-all duration-300 ${  
-                                shownConfessionId === conf.id ? 'shadow-xl z-10' : ''  
-                              }`}  
-                              style={{  
-                                backgroundColor: conf.bg_color || '#ffffff',  
-                                color: conf.color || '#000000',  
-                                borderColor: conf.border_color || '#e5e7eb',  
-                                borderRadius: conf.shape === 'rounded' ? '16px' : conf.shape === 'circle' ? '50%' : '0',  
-                                fontFamily: conf.font_family || 'Arial',  
-                                fontSize: `${conf.font_size || 14}px`,  
-                                textAlign: 'center',  
-                                overflow: 'hidden',  
-                                boxShadow: shownConfessionId === conf.id ? '0 10px 15px rgba(0,0,0,0.2)' : '0 2px 5px rgba(0,0,0,0.1)'  
-                              }}  
-                            >  
-                              {shownConfessionId === conf.id && conf.name ? (  
-                                <span className="text-sm font-medium">{conf.name}</span>  
-                              ) : (  
-                                conf.text  
-                              )}  
-                            </div>  
+                            {conf.name && (  
+                              <div className={`absolute -top-8 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded bg-gray-900 text-white whitespace-nowrap transition-opacity duration-200 ${  
+                                shownConfessionId === conf.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'  
+                              } z-50`}>  
+                                {conf.name}  
+                                {conf.needs_moderation && ' (Under Review)'}
+                              </div>  
+                            )}  
+                              
+                            <div
+                              className="w-full h-full flex items-center justify-center text-center p-3"
+                              style={{
+                                backgroundColor: conf.bg_color || '#ffffff',
+                                color: conf.color || '#000000',
+                                border: `2px solid ${conf.border_color || '#e5e7eb'}`,
+                                borderRadius: conf.shape === 'circle' ? '50%' : conf.shape === 'rounded' ? '16px' : '0',
+                                fontFamily: conf.font_family || 'Arial',
+                                fontSize: `${conf.font_size || 14}px`,
+                                overflow: 'hidden',
+                                wordBreak: 'break-word'
+                              }}
+                            >
+                              {conf.text}
+                            </div>
                           </div>  
                         ))}  
                       </div>  
                     </div>  
                   )}  
                 </div>  
-
-                <div className="flex flex-wrap gap-3 mt-4">  
-                  <button  
-                    onClick={fitToFullContent}  
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"  
-                  >  
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
-                      <path d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 00-1.414 1.414L14.586 9H3a1 1 0 000 2h11.586l-1.293 1.293z" />  
-                    </svg>  
-                    Fit to Content  
-                  </button>  
-
-                  <button  
-                    onClick={() => setShowTimeLapse(true)}  
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"  
-                  >  
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />  
-                    </svg>  
-                    View Time Lapse  
-                  </button>  
-
-                  <button  
-                    onClick={shareCampaign}  
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"  
-                  >  
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
-                      <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />  
-                    </svg>  
+                  
+                <div className="mt-4 text-sm text-gray-600">  
+                  <p>✨ Each confession is styled uniquely, creating a beautiful mosaic of thoughts and secrets.</p>  
+                  <p className="mt-1">🖱️ Scroll to explore, zoom in/out, and click on confessions to see who posted them.</p>  
+                </div>  
+              </div>  
+                
+              <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-200">  
+                <h3 className="font-semibold text-gray-900 mb-2">About This Campaign</h3>  
+                <p className="text-sm text-gray-600">  
+                  {activeCampaign.description || "This campaign brings together community confessions to form a visual tapestry of shared experiences. Each confession is a unique contribution to the collective story."}  
+                </p>  
+                  
+                <div className="mt-4 flex flex-wrap gap-2">  
+                  <button onClick={shareCampaign} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
                     Share Campaign  
                   </button>  
-
-                  <button  
-                    onClick={downloadImage}  
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"  
-                  >  
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
-                      <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />  
-                    </svg>  
+                  <button onClick={downloadImage} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
                     Download Image  
                   </button>  
-
-                  <button  
-                    onClick={reportIssue}  
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center"  
-                  >  
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">  
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />  
-                    </svg>  
+                  <button onClick={() => setShowTimeLapse(true)} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    View Time Lapse  
+                  </button>  
+                  <button onClick={reportIssue} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
                     Report Issue  
+                  </button>  
+                  <button onClick={fitToFullContent} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition-colors">  
+                    View Full Campaign  
                   </button>  
                 </div>  
               </div>  
             </div>  
           </div>  
-        )}  
-      </main>  
+        )}
+      </main>
 
-      <CommunityGuidelinesModal  
-        isOpen={showGuidelines}  
-        onClose={() => setShowGuidelines(false)}  
-        onAccept={() => {  
-          setGuidelinesAccepted(true);  
-          setShowGuidelines(false);  
-          if (userAction === 'placing') handlePlaceConfession();  
-        }}  
-      />  
+      <CommunityGuidelinesModal
+        isOpen={showGuidelines}
+        onClose={() => setShowGuidelines(false)}
+        onAccept={() => {
+          setGuidelinesAccepted(true);
+          setShowGuidelines(false);
+        }}
+      />
 
-      <AdminLoginModal  
-        isOpen={showAdminLogin}  
-        onClose={() => setShowAdminLogin(false)}  
-        onLogin={() => setIsAdminLoggedIn(true)}  
-      />  
+      <AdminLoginModal
+        isOpen={showAdminLogin}
+        onClose={() => setShowAdminLogin(false)}
+        onLogin={() => setIsAdminLoggedIn(true)}
+      />
 
-      <TimeLapseModal  
-        isOpen={showTimeLapse}  
-        onClose={() => setShowTimeLapse(false)}  
-        confessions={confessions}  
-        activeCampaign={activeCampaign}  
-      />  
-    </div>  
+      <TimeLapseModal
+        isOpen={showTimeLapse}
+        onClose={() => setShowTimeLapse(false)}
+        confessions={confessions}
+        activeCampaign={activeCampaign}
+      />
+
+      <style>{`
+        [data-flash="1"] {
+          animation: flash 1.5s ease-in-out;
+        }
+        @keyframes flash {
+          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+          50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        input[type="range"] {
+          -webkit-appearance: none;
+          height: 6px;
+          background: #e5e7eb;
+          border-radius: 3px;
+          outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #4f46e5;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px #e5e7eb, 0 2px 4px rgba(0,0,0,0.1);
+        }
+      `}</style>
+    </div>
   );
 }
