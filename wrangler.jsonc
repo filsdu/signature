@@ -3,5 +3,18 @@
   "compatibility_date": "2025-11-13",
   "assets": {
     "directory": "./dist"
+  },
+  "build": {
+    "command": "npm run build"
+  },
+  "env": {
+    "production": {
+      "routes": [
+        {
+          "pattern": "signature.pages.dev",
+          "zone_name": "pages.dev"
+        }
+      ]
+    }
   }
 }
