@@ -328,7 +328,7 @@ export default function SignaturePage() {
 
   return (
     <div className="min-h-screen w-full bg-neutral-50 text-neutral-900">
-      <div className="max-w-6xl mx-auto p-6">
+      <div className="container">
         <header className="mb-6">
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Signature Shard</h1>
           <p className="text-sm text-neutral-600 mt-2">Realtime wall via Supabase. Draw, place, and see others instantly.</p>
