@@ -1,29 +1,49 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './SignaturePad.css';
 
-const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200, strokeWidth = 2.5 }) => {
+const SignaturePad = ({ onExport, color = '#111827', strokeWidth = 2.5, aspect = 2.5 }) => {
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasInk, setHasInk] = useState(false);
   const [pen, setPen] = useState({ pressure: 1 });
 
+  // make canvas responsive: size it to container width and keep a fixed aspect ratio
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-    
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = color;
-  }, [width, height, color]);
+    const resize = () => {
+      const canvas = canvasRef.current;
+      const cont = containerRef.current;
+      if (!canvas || !cont) return;
+      const rect = cont.getBoundingClientRect();
+      const w = Math.max(200, Math.floor(rect.width));
+      const h = Math.max(120, Math.floor(w / aspect));
+      const dpr = window.devicePixelRatio || 1;
+
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = color;
+    };
+
+    resize();
+    const ro = new ResizeObserver(resize);
+    if (containerRef.current) ro.observe(containerRef.current);
+    window.addEventListener('orientationchange', resize);
+    window.addEventListener('resize', resize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('orientationchange', resize);
+      window.removeEventListener('resize', resize);
+    };
+  }, [color, aspect]);
 
   const getPosition = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -71,7 +91,8 @@ const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200, 
 
   const clearCanvas = () => {
     const ctx = canvasRef.current.getContext('2d');
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    const canvas = canvasRef.current;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasInk(false);
   };
 
@@ -142,7 +163,7 @@ const SignaturePad = ({ onExport, color = '#111827', width = 500, height = 200, 
         </div>
       </div>
       
-      <div className="signature-canvas-container">
+      <div className="signature-canvas-container" ref={containerRef}>
         <canvas
           ref={canvasRef}
           onMouseDown={startDrawing}
