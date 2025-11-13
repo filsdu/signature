@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 
@@ -11,6 +11,7 @@ export default function Navbar() {
   const [user, setUser] = useState(null);
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { nickname, clearNickname } = useContext(require('../contexts/NicknameContext').NicknameContext);
 
   // keep user in sync
   useEffect(() => {
@@ -53,7 +54,12 @@ export default function Navbar() {
           </div>
 
           <div className="nav-actions">
-            {user ? (
+            {nickname ? (
+              <>
+                <span style={{fontSize:13,color:'#6b7280',marginRight:8}}>{nickname}</span>
+                <button onClick={() => clearNickname()} className="btn btn-secondary">Change</button>
+              </>
+            ) : user ? (
               <>
                 <span style={{fontSize:13,color:'#6b7280',marginRight:8}}>{user.email}</span>
                 <button onClick={signOut} className="btn btn-secondary">Sign out</button>

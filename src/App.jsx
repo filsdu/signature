@@ -8,6 +8,8 @@ import SignaturePage from "./pages/SignaturePage.jsx";
 import ConfessionPage from "./pages/ConfessionPage.jsx";
 import PhotoPage from "./pages/PhotoPage.jsx";
 import WordCampaignBoard from "./pages/WordCampaignBoard.jsx";
+import { NicknameProvider } from './contexts/NicknameContext';
+import OnboardModal from './components/OnboardModal';
 
 function NotFound() {
   return (
@@ -20,27 +22,31 @@ function NotFound() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
-        <Navbar />
+    <NicknameProvider>
+      <BrowserRouter>
+        <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col">
+          <Navbar />
 
-        <main className="flex-1">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/signatures" element={<SignaturePage />} />
-            <Route path="/confessions" element={<ConfessionPage />} />
-            <Route path="/photos" element={<PhotoPage />} />
-            <Route path="/word-campaigns" element={<WordCampaignBoard />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </main>
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/signatures" element={<SignaturePage />} />
+              <Route path="/confessions" element={<ConfessionPage />} />
+              <Route path="/photos" element={<PhotoPage />} />
+              <Route path="/word-campaigns" element={<WordCampaignBoard />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
 
-        <footer className="py-8 text-xs text-neutral-500 border-t border-neutral-200 bg-white">
-          <div className="max-w-6xl mx-auto px-4">
-            Built with Supabase + Vite. Be kind, create cool walls ✌️
-          </div>
-        </footer>
-      </div>
-    </BrowserRouter>
+          <footer className="py-8 text-xs text-neutral-500 border-t border-neutral-200 bg-white">
+            <div className="max-w-6xl mx-auto px-4">
+              Built with Supabase + Vite. Be kind, create cool walls ✌️
+            </div>
+          </footer>
+
+          <OnboardModal />
+        </div>
+      </BrowserRouter>
+    </NicknameProvider>
   );
 }
