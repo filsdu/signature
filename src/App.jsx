@@ -8,6 +8,9 @@ import SignaturePage from "./pages/SignaturePage.jsx";
 import ConfessionPage from "./pages/ConfessionPage.jsx";
 import PhotoPage from "./pages/PhotoPage.jsx";
 import WordCampaignBoard from "./pages/WordCampaignBoard.jsx";
+import Campaigns from './pages/Campaigns.jsx';
+import CreateCampaign from './pages/CreateCampaign.jsx';
+import TextCampaign from './pages/TextCampaign.jsx';
 import { NicknameProvider } from './contexts/NicknameContext';
 import OnboardModal from './components/OnboardModal';
 
@@ -30,6 +33,9 @@ export default function App() {
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/campaigns" element={<Campaigns />} />
+              <Route path="/create-campaign" element={<CreateCampaign />} />
+              <Route path="/text/:id" element={<TextCampaign />} />
               <Route path="/signatures" element={<SignaturePage />} />
               <Route path="/confessions" element={<ConfessionPage />} />
               <Route path="/photos" element={<PhotoPage />} />

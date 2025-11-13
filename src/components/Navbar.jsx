@@ -47,6 +47,7 @@ export default function Navbar() {
 
         <nav style={{display:'flex',alignItems:'center',gap:12}}>
           <div className="nav-links">
+            <NavLink to="/campaigns" className={({isActive}) => isActive? 'menu-link active' : 'menu-link'}>Campaigns</NavLink>
             <NavLink to="/signatures" className={({isActive}) => isActive? 'menu-link active' : 'menu-link'}>Signatures</NavLink>
             <NavLink to="/confessions" className={({isActive}) => isActive? 'menu-link active' : 'menu-link'}>Confessions</NavLink>
             <NavLink to="/photos" className={({isActive}) => isActive? 'menu-link active' : 'menu-link'}>Photos</NavLink>

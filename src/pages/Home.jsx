@@ -132,185 +132,39 @@ export default function Home() {
                   </button>
                 </form>
                 
-                {sent && (
-                  <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">
-                    Magic link sent! Check your email and click the link to finish signing in.
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {message && (
-              <div className="mt-4 p-3 bg-yellow-100 text-yellow-700 rounded-lg text-sm">
-                {message}
-              </div>
-            )}
-          </div>
-        </section>
+                import React, { useContext } from "react";
+                import { Link } from "react-router-dom";
+                import { NicknameContext } from '../contexts/NicknameContext';
 
-        {/* Boards Section */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-center mb-8">Choose a Board</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Signatures */}
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
-              <div className="h-40 bg-gradient-to-r from-blue-400 to-blue-600 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </div>
-              <div className="p-5">
-                <h3 className="text-lg font-semibold mb-2">Signatures</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Draw your signature and place it on a collective artwork without overlaps.
-                </p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => go('/signatures')} 
+                export default function Home(){
+                  const { nickname } = useContext(NicknameContext);
+
+                  return (
+                    <div style={{minHeight:'100vh',background:'linear-gradient(180deg,#f0f9ff,#f5f3ff)'}}>
+                      <div className="container" style={{padding:'40px 16px'}}>
+                        <header style={{textAlign:'center',marginBottom:18}}>
+                          <h1 style={{margin:0,fontSize:28,fontWeight:700}}>Mosaic Voice</h1>
+                          <p style={{color:'#6b7280',marginTop:8,maxWidth:720,marginLeft:'auto',marginRight:'auto'}}>A living digital mosaic where community creations — text, photos, signatures and audio — become a collective artwork. No email required — choose a nickname and start creating.</p>
+                        </header>
+
+                        <div style={{display:'flex',gap:12,flexDirection:'column',alignItems:'center',marginTop:12}}>
+                          <div style={{display:'flex',gap:8}}>
+                            <Link to="/campaigns" className="btn btn-primary">Explore Campaigns</Link>
+                            <Link to="/create-campaign" className="btn btn-secondary">Create Campaign</Link>
+                          </div>
+
+                          <div style={{marginTop:18,background:'#fff',borderRadius:12,padding:14,boxShadow:'0 6px 18px rgba(2,6,23,0.06)',width:'100%',maxWidth:920}}>
+                            <h3 style={{marginTop:0}}>Getting started</h3>
+                            <ol style={{color:'#6b7280'}}>
+                              <li>Pick a nickname (one-time).</li>
+                              <li>Explore or create a campaign.</li>
+                              <li>Create your shard — style it, preview, and post.</li>
+                            </ol>
+                            <div style={{marginTop:12}}>Current identity: <strong>{nickname || 'Not set'}</strong></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
                     className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
-                  >
-                    Create
-                  </button>
-                  <Link 
-                    to="/signatures" 
-                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
-                  >
-                    View
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Confessions */}
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
-              <div className="h-40 bg-gradient-to-r from-purple-400 to-purple-600 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-              </div>
-              <div className="p-5">
-                <h3 className="text-lg font-semibold mb-2">Confessions</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Share thoughts in customizable shapes that touch but don't overlap.
-                </p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => go('/confessions')} 
-                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
-                  >
-                    Create
-                  </button>
-                  <Link 
-                    to="/confessions" 
-                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
-                  >
-                    View
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Photos */}
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
-              <div className="h-40 bg-gradient-to-r from-pink-400 to-pink-600 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div className="p-5">
-                <h3 className="text-lg font-semibold mb-2">Photos</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Upload images to create a mosaic where photos touch but never overlap.
-                </p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => go('/photos')} 
-                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
-                  >
-                    Create
-                  </button>
-                  <Link 
-                    to="/photos" 
-                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
-                  >
-                    View
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Word Campaigns */}
-            <div className="bg-white rounded-2xl shadow-md overflow-hidden transition-transform hover:scale-105">
-              <div className="h-40 bg-gradient-to-r from-green-400 to-green-600 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-                </svg>
-              </div>
-              <div className="p-5">
-                <h3 className="text-lg font-semibold mb-2">Word Campaigns</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Contribute to collective word art where each signature fills the outline of a message.
-                </p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => go('/word-campaigns')} 
-                    className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors"
-                  >
-                    Create
-                  </button>
-                  <Link 
-                    to="/word-campaigns" 
-                    className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm transition-colors"
-                  >
-                    View
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Features Section */}
-        <section className="bg-white rounded-2xl shadow-lg p-8 mb-12">
-          <h2 className="text-2xl font-semibold text-center mb-8">How It Works</h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold mb-2">Create</h3>
-              <p className="text-gray-600">Sign in and create your unique contribution - a signature, confession, photo, or word art.</p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold mb-2">Place</h3>
-              <p className="text-gray-600">Position your creation on the collective canvas where pieces touch but never overlap.</p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 极速赛车开奖结果 极速赛车开奖官网 极速赛车开奖直播 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905a3.61 3.61 0 01-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold mb-2">Share</h3>
-              <p className="text-gray-600">Watch as thousands of contributions come together to form beautiful collaborative art.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Footer */}
-        <footer className="text-center text-gray-500 text-sm">
-          <p>© {new Date().getFullYear()} Signature Shards. All rights reserved.</p>
-        </footer>
-      </div>
-    </div>
-  );
-}
