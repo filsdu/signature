@@ -1,16 +1,6 @@
 {
-  "name": "signature-wall",
+  "name": "signature",
   "compatibility_date": "2025-11-13",
-  "env": {
-    "production": {
-      "name": "signature-wall"
-    }
-  },
-  "env": {
-    "production": {
-      "name": "signature-wall"
-    }
-  },
   "assets": {
     "directory": "./dist"
   }
